@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visual Web Test Repair Demo</title>
+    <link rel="stylesheet" href="./vista-demo.css" />
+  </head>
+  <body>
+    <div class="vista-page">
+      <header class="hero-card">
+        <div class="hero-copy">
+          <p class="eyebrow">ESEC/FSE 2018 PAPER DEMO</p>
+          <h1>Visual Web Test Repair</h1>
+          <p class="hero-summary">
+            这是对论文
+            <a href="https://doi.org/10.1145/3236024.3236063" target="_blank" rel="noreferrer">Visual Web Test Repair</a>
+            的交互式核心机制 demo。它不复现原论文的 Java + Selenium + OpenCV 工具链，而是把论文里最关键的三类 breakage 和 Vista 的修复流程做成浏览器内可视化模拟。
+          </p>
+          <div class="hero-actions">
+            <button id="playAllBtn" class="primary-btn" type="button">自动播放完整流程</button>
+            <button id="resetBtn" class="ghost-btn" type="button">重置</button>
+            <a class="ghost-link" href="./index.html">返回原首页</a>
+          </div>
+        </div>
+
+        <aside class="hero-meta">
+          <div class="meta-grid">
+            <article>
+              <span>论文</span>
+              <strong>Visual Web Test Repair</strong>
+              <p>Andrea Stocco, Rahulkrishna Yandrapally, Ali Mesbah</p>
+            </article>
+            <article>
+              <span>核心思想</span>
+              <strong>DOM + 视觉 + 局部爬取</strong>
+              <p>不只看 locator，还验证它是不是“视觉上还是那个元素”。</p>
+            </article>
+            <article>
+              <span>三类问题</span>
+              <strong>Non-selection / Workflow / Mis-selection</strong>
+              <p>覆盖论文中最有代表性的三种 breakage。</p>
+            </article>
+            <article>
+              <span>来源</span>
+              <strong>AddressBook 场景</strong>
+              <p>页面演化和测试语句设计基于论文中的运行示例。</p>
+            </article>
+          </div>
+          <p class="source-note">
+            参考：
+            <a href="https://portal.fis.tum.de/en/publications/visual-web-test-repair/" target="_blank" rel="noreferrer">论文摘要页</a>
+            /
+            <a href="https://people.ece.ubc.ca/~astocco/pubs/2018-Stocco-FSE18-demo.pdf" target="_blank" rel="noreferrer">Vista Demo Paper</a>
+            /
+            <a href="https://github.com/saltlab/vista" target="_blank" rel="noreferrer">原型仓库</a>
+          </p>
+        </aside>
+      </header>
+
+      <section class="pipeline-card">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">PIPELINE</p>
+            <h2>Vista 的最小工作流</h2>
+          </div>
+          <p id="pipelineCaption" class="section-copy"></p>
+        </div>
+        <div id="pipelineSteps" class="pipeline-steps"></div>
+      </section>
+
+      <section class="controls-card">
+        <div class="section-head compact">
+          <div>
+            <p class="eyebrow">SCENARIO</p>
+            <h2>选择论文场景</h2>
+          </div>
+          <div class="nav-buttons">
+            <button id="prevStageBtn" class="mini-btn" type="button">上一步</button>
+            <button id="nextStageBtn" class="mini-btn" type="button">下一步</button>
+          </div>
+        </div>
+        <div id="scenarioTabs" class="scenario-tabs"></div>
+        <div id="stageTabs" class="stage-tabs"></div>
+      </section>
+
+      <main class="demo-grid">
+        <section class="panel-card code-card">
+          <div class="section-head compact">
+            <div>
+              <p class="eyebrow">TEST CASE</p>
+              <h2>原始脚本 vs 修复脚本</h2>
+            </div>
+            <p id="codeHint" class="section-copy"></p>
+          </div>
+          <div class="code-columns">
+            <article class="code-box">
+              <h3>Original Test</h3>
+              <div id="originalCode" class="code-view"></div>
+            </article>
+            <article class="code-box">
+              <h3>Vista Repaired Test</h3>
+              <div id="repairedCode" class="code-view"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel-card browser-card">
+          <div class="section-head compact">
+            <div>
+              <p class="eyebrow">VISUAL CONTEXT</p>
+              <h2>V1 记录与 V2 执行</h2>
+            </div>
+            <p id="browserHint" class="section-copy"></p>
+          </div>
+          <div class="browser-columns">
+            <article class="browser-shell">
+              <div class="browser-top">
+                <span>Web App V1</span>
+                <strong id="v1Label"></strong>
+              </div>
+              <div id="v1Viewport" class="browser-viewport"></div>
+            </article>
+            <article class="browser-shell">
+              <div class="browser-top">
+                <span>Web App V2</span>
+                <strong id="v2Label"></strong>
+              </div>
+              <div id="v2Viewport" class="browser-viewport"></div>
+            </article>
+          </div>
+
+          <div class="lower-strip">
+            <article class="template-card">
+              <div class="strip-head">
+                <span>Visual Locator</span>
+                <strong id="templateTitle"></strong>
+              </div>
+              <div id="templatePreview" class="template-preview"></div>
+              <p id="templateNote" class="mini-copy"></p>
+            </article>
+
+            <article class="template-card">
+              <div class="strip-head">
+                <span>Repair Suggestion</span>
+                <strong id="repairTitle"></strong>
+              </div>
+              <div id="repairPreview" class="repair-preview"></div>
+              <p id="repairNote" class="mini-copy"></p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel-card analysis-card">
+          <div class="section-head compact">
+            <div>
+              <p class="eyebrow">ANALYSIS</p>
+              <h2>算法在当前步骤看到什么</h2>
+            </div>
+            <p id="analysisHint" class="section-copy"></p>
+          </div>
+
+          <div id="metricChips" class="metric-chips"></div>
+
+          <div class="analysis-columns">
+            <article class="analysis-box">
+              <h3>执行日志</h3>
+              <ol id="logList" class="log-list"></ol>
+            </article>
+
+            <article class="analysis-box">
+              <h3>候选匹配</h3>
+              <div id="candidateList" class="candidate-list"></div>
+            </article>
+          </div>
+
+          <div id="crawlPanel" class="crawl-panel"></div>
+
+          <div class="legend">
+            <span><i class="legend-chip dom"></i> DOM 命中</span>
+            <span><i class="legend-chip visual"></i> 视觉匹配</span>
+            <span><i class="legend-chip mismatch"></i> 错误选择</span>
+            <span><i class="legend-chip trace"></i> V1 记录模板</span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script defer src="./vista-demo.js"></script>
+  </body>
+</html>

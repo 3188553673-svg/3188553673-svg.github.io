@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>街机小宇宙</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">MINI GAME COLLECTION</p>
+          <h1>街机小宇宙</h1>
+          <p class="hero-copy">
+            一个零依赖小游戏合集站。所有游戏都在同一个页面里直接运行，点击左侧卡片就能切换。
+          </p>
+          <div class="hero-cta-row">
+            <a class="hero-demo-link" href="./vista-demo.html">打开论文 Demo：Visual Web Test Repair</a>
+          </div>
+        </div>
+        <div class="hero-stats">
+          <div>
+            <strong>15</strong>
+            <span>款游戏</span>
+          </div>
+          <div>
+            <strong>0</strong>
+            <span>安装成本</span>
+          </div>
+          <div>
+            <strong>∞</strong>
+            <span>反复开玩</span>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="library">
+          <div class="library-head">
+            <h2>游戏目录</h2>
+            <p>选择一个游戏开始。</p>
+          </div>
+          <div id="gameList" class="game-list"></div>
+        </aside>
+
+        <section class="stage-shell">
+          <div class="stage-topbar">
+            <div>
+              <p class="stage-label">当前游戏</p>
+              <h2 id="gameTitle">-</h2>
+              <p id="gameTagline" class="stage-tagline"></p>
+            </div>
+            <button id="restartBtn" class="restart-btn">重新开始</button>
+          </div>
+
+          <div class="stage-meta">
+            <div>
+              <span>类型</span>
+              <strong id="gameGenre">-</strong>
+            </div>
+            <div>
+              <span>难度</span>
+              <strong id="gameDifficulty">-</strong>
+            </div>
+            <div>
+              <span>操作</span>
+              <strong id="gameControlsShort">-</strong>
+            </div>
+          </div>
+
+          <div id="gameHost" class="game-host"></div>
+
+          <div class="guide-grid">
+            <article class="guide-card">
+              <h3>玩法提示</h3>
+              <p id="gameControls"></p>
+            </article>
+            <article class="guide-card">
+              <h3>项目说明</h3>
+              <p>
+                素材使用 CSS、Canvas、SVG、本地图片和本地 3D 模型资源，不依赖外部 CDN。
+              </p>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script defer src="./assets/dragon_lore_model.js"></script>
+    <script defer src="./dragon-lore-fps.js"></script>
+    <script defer src="./app.js"></script>
+  </body>
+</html>
