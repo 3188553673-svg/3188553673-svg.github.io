@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: alien-sniper-relay-3188553673
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: alien-sniper
+    buildCommand: npm --prefix cloud test
+    startCommand: node cloud/server.js
+    healthCheckPath: /api/health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production

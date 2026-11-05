@@ -1,4 +1,4 @@
-import { P2PTransport } from './p2p-transport.js';
+import { createTransport, isCloudMode, connectionError, networkLabel, connectionTimeout } from './network-config.js';
 import { DuelScene } from './scene.js';
 import { WALL, TARGET_BOUNDS } from './rules.js';
 
@@ -23,6 +23,8 @@ let soundContext = null, soundBus = null, audioReady = false;
 let lastUiKey = '', lastLobbyKey = '', lastHoles = 0, fps = 60;
 const keys = new Set();
 const diagnostics = { frames: 0, fps: 0, errors: [], connected: false };
+diagnostics.transport = isCloudMode ? 'server-websocket' : 'webrtc-direct';
+text('network-status', connectionError || networkLabel);
 window.addEventListener('error', e => diagnostics.errors.push(e.message));
 window.addEventListener('unhandledrejection', e => diagnostics.errors.push(String(e.reason)));
 window.__duel = { get state() { return state; }, get id() { return id; }, scene, diagnostics, get aim() { return { ...aim }; } };
@@ -67,19 +69,23 @@ function banner(small, title, detail, duration = 1600) {
   text('banner-small', small); text('banner-title', title); text('banner-detail', detail); hide('wave-banner', false);
   clearTimeout(bannerTimer); bannerTimer = setTimeout(() => hide('wave-banner'), duration);
 }
-function send(message) { if (ws?.readyState === P2PTransport.OPEN) { ws.send(JSON.stringify(message)); return true; } return false; }
+function send(message) { if (ws?.readyState === WebSocket.OPEN) { ws.send(JSON.stringify(message)); return true; } return false; }
 
 async function joinRoom(room = '') {
   if (!scene.available) return toast('请先使用支持 3D 图形的浏览器');
+  if (connectionError) return toast(connectionError);
   if (connectPending) return;
   const name = $('callsign').value.trim().slice(0, 12) || `狙击手${Math.floor(Math.random() * 100)}`;
   $('callsign').value = name;
   try { localStorage.setItem('duel.name', name); } catch {}
   audioInit(); $('create-btn').disabled = true; $('join-btn').disabled = true;
+  text('entry-status', '');
   text('network-status', '正在连接房间…');
-  const socket = new P2PTransport();
+  text('join-status', '正在连接房间…');
+  const socket = createTransport();
   ws = socket; connectPending = socket;
-  connectTimer = setTimeout(() => { if (connectPending === socket) { toast('连接超时，请检查网络后重试'); socket.close(); } }, 30000);
+  connectTimer = setTimeout(() => { if (connectPending === socket) socket.close(isCloudMode ? '联机服务器暂时未能启动，请稍后重试' : '直连未能建立，需要使用云端中转版'); }, connectionTimeout);
+  socket.addEventListener('progress', event => { if (ws === socket) { text('network-status', event.data); text('join-status', event.data); } });
   socket.addEventListener('open', () => { if (ws === socket) send({ type: 'join', name, ...(room ? { room } : { create: true }) }); });
   socket.addEventListener('message', event => {
     if (ws !== socket) return;
@@ -88,6 +94,7 @@ async function joinRoom(room = '') {
       clearTimeout(connectTimer); connectPending = null; id = message.id;
       $('create-btn').disabled = false; $('join-btn').disabled = false;
       diagnostics.connected = true; closeDialogs();
+      text('join-status', '');
       text('room-code', message.room); text('network-status', `房间 ${message.room} · 已连接`);
       updateShareURL(message.room); tone(440, .15, 'sine', .2, 660);
     } else if (message.type === 'state') receiveState(message.state);
@@ -96,7 +103,8 @@ async function joinRoom(room = '') {
     else if (message.type === 'error') {
       if (message.code !== 'COOLDOWN') toast(message.message || '操作未完成');
       if (connectPending === socket) {
-        clearTimeout(connectTimer); connectPending = null; $('create-btn').disabled = false; $('join-btn').disabled = false; text('network-status', '在线 · 双人对决');
+        clearTimeout(connectTimer); connectPending = null; $('create-btn').disabled = false; $('join-btn').disabled = false; text('network-status', networkLabel);
+        text('join-status', message.message || '加入失败，请重试');
         ws = null; socket.close();
       }
     }
@@ -106,6 +114,8 @@ async function joinRoom(room = '') {
     clearTimeout(connectTimer); ws = null; connectPending = null; diagnostics.connected = false;
     $('create-btn').disabled = false; $('join-btn').disabled = false;
     const wasInRoom = Boolean(state); returnToEntry(false); toast(event.reason || (wasInRoom ? '连接已中断，请检查网络后重新加入' : '暂时无法连接，请检查网络后重试'));
+    text('entry-status', event.reason || '连接未能建立，请重试');
+    text('join-status', event.reason || '连接未能建立，请重试');
   });
   socket.addEventListener('error', () => {});
 }
@@ -115,7 +125,7 @@ function returnToEntry(disconnect = true) {
   state = null; id = null; lastPhase = ''; lastTurn = 0; lastResultKey = ''; lastLobbyKey = ''; lastHoles = 0; lastUiKey = ''; localTarget = null;
   keys.clear(); pointerDown = false; diagnostics.connected = false;
   hide('entry', false); hide('lobby'); hide('hud'); hide('wave-banner'); document.body.classList.remove('playing', 'hider');
-  text('network-status', '在线 · 双人对决'); scene.update(null, 0);
+  text('network-status', networkLabel); scene.update(null, 0);
 }
 function receiveState(next) {
   const previous = state; state = next; receivedAt = performance.now();
@@ -232,6 +242,15 @@ $('entry-form').addEventListener('submit', e => { e.preventDefault(); joinRoom()
 $('join-open-btn').addEventListener('click', () => { audioInit(); $('invite-name').value = $('callsign').value; openDialog('join-dialog'); $('join-code').focus(); });
 $('join-form').addEventListener('submit', e => { e.preventDefault(); $('callsign').value = $('invite-name').value.trim() || $('callsign').value; joinRoom($('join-code').value); });
 $('join-code').addEventListener('input', () => { $('join-code').value = $('join-code').value.replace(/\D/g, '').slice(0, 4); });
+$('join-dialog').addEventListener('close', () => {
+  if (!connectPending) return;
+  const pending = connectPending;
+  clearTimeout(connectTimer); connectPending = null;
+  if (ws === pending) ws = null;
+  pending.close();
+  $('create-btn').disabled = false; $('join-btn').disabled = false;
+  text('network-status', networkLabel); text('join-status', '');
+});
 document.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => $(b.dataset.close).close()));
 document.querySelectorAll('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d && !['result-dialog', 'pause-dialog'].includes(d.id)) { const r = d.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) d.close(); } }));
 $('help-btn').addEventListener('click', () => openDialog('help-dialog'));
@@ -265,7 +284,7 @@ function updateShareURL(room = state?.room) {
   if (room) url.searchParams.set('room', room);
   shareURL = url.href;
   text('lan-url', shareURL);
-  text('lan-hint', '把链接发给朋友，双方联网即可，无需处在同一个 Wi-Fi。');
+  text('lan-hint', isCloudMode ? '通过云端连接，双方保持网页开启即可。' : '当前为浏览器直连；如果朋友加入失败，需要使用云端中转版。');
 }
 updateShareURL();
 const invitationCode = new URL(location.href).searchParams.get('room');
