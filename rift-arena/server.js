@@ -10,7 +10,7 @@ import { CHAMPIONS } from './shared/definitions.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PAGES_ORIGIN = 'https://3188553673-svg.github.io';
-const PUBLIC = new Set(['index.html', 'app.js', 'style.css', 'scene.js', 'scene-performance.js', 'hero-assets.js', 'network.js', 'client-movement.js', 'ui-art.js', 'connection.json', 'shared/definitions.js']);
+const PUBLIC = new Set(['index.html', 'app.js', 'style.css', 'scene.js', 'scene-performance.js', 'arena-environment.js', 'original-heroes.js', 'hero-assets.js', 'network.js', 'client-movement.js', 'ui-art.js', 'connection.json', 'shared/definitions.js']);
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.txt': 'text/plain; charset=utf-8', '.ico': 'image/x-icon' };
 
 function publicOrigin(req) {

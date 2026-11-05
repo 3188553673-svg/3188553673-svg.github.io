@@ -8,3 +8,5 @@
 @media(max-height:700px) and (min-width:850px){.entry-foot{display:none}.entry h1{font-size:39px}.entry-intro{margin-top:9px;margin-bottom:12px}.hero-card .portrait-svg{height:70px}}
 
 .quality-control{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:20px 0;color:#b9c9c9;font-size:14px}.quality-control select{border:1px solid #506567;background:#11262e;color:#e4ddd0;padding:9px 12px;border-radius:3px;font:inherit}#fps-label{font-variant-numeric:tabular-nums}
+
+.portrait-art{display:block;width:100%;height:100%;object-fit:cover;object-position:center 36%}.lobby-hero .portrait-art{width:100%;height:100%}.hero-card .portrait-art{filter:saturate(.78)}.hero-card:hover .portrait-art,.hero-card.selected .portrait-art{filter:saturate(1)}.self-portrait .portrait-art{width:100%;height:100%;object-fit:cover}.entry h1{text-shadow:0 3px 15px #0410148c}

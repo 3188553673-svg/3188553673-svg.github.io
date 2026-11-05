@@ -39,10 +39,11 @@ test('HTTP identifies this game, supports Pages health CORS, and blocks server s
   const definitions = await fetch(base + '/shared/definitions.js');
   assert.equal(definitions.status, 200);
   assert.match(await definitions.text(), /CHAMPIONS/);
-  for(const route of ['/client-movement.js','/scene-performance.js','/hero-assets.js','/vendor/GLTFLoader.js','/vendor/SkeletonUtils.js','/vendor/BufferGeometryUtils.js']) {
+  for(const route of ['/client-movement.js','/scene-performance.js','/original-heroes.js','/arena-environment.js','/hero-assets.js','/vendor/GLTFLoader.js','/vendor/SkeletonUtils.js','/vendor/BufferGeometryUtils.js']) {
     const response=await fetch(base+route);assert.equal(response.status,200,route);
     assert.match(response.headers.get('content-type'),/javascript/,route);
   }
+  for(const [route,mime] of [['/assets/portraits/knight-v1.jpg','image/jpeg'],['/assets/original-heroes/metal-paint.png','image/png']]){const response=await fetch(base+route);assert.equal(response.status,200,route);assert.equal(response.headers.get('content-type'),mime,route);await response.arrayBuffer();}
   for (const route of ['/server.js', '/server/engine.js', '/package.json', '/tests/server.test.mjs', '/assets/%2e%2e%2fserver.js']) {
     assert.equal((await fetch(base + route)).status, 404, route);
   }

@@ -1,14 +1,15 @@
 import * as THREE from './vendor/three.module.js';
 import { FrameBudget } from './scene-performance.js?v=perf2';
 import { MovementPredictor } from './client-movement.js?v=perf2';
-import { hasHeroAsset, loadHeroModel } from './hero-assets.js?v=perf2';
+import { createOriginalHero } from './original-heroes.js';
+import { buildArenaEnvironment } from './arena-environment.js';
 
 const TEAM = [0x47d9ed, 0xf16c80];
 const CHAMPION = { garen: 0x65a8da, ashe: 0x96e7ff, lux: 0xf6cf73, yi: 0x94d382 };
+const PREVIEW_HALF = 10.9;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const finite = (v, fallback = 0) => Number.isFinite(v) ? v : fallback;
 const angleLerp = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
-const rng = seed => () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 
 /** Original, procedural 3D arena. All match positions and effects come from the server. */
 export class ArenaScene {
@@ -34,7 +35,6 @@ export class ArenaScene {
     this.frameBudget = new FrameBudget(window.devicePixelRatio || 1);
     this.performance = this.frameBudget.metrics;
     this.assetStatus = {};
-    this.previewAssetRequest = 0;
     this.actorBatchGeometries = new Map();
     this.state = null;
     this.selfId = null;
@@ -55,16 +55,16 @@ export class ArenaScene {
       this.renderer.setPixelRatio(this.frameBudget.ratio);
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      this.renderer.toneMappingExposure = 1.22;
+      this.renderer.toneMappingExposure = 1.16;
       this.renderer.shadowMap.enabled = true;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       this.scene = new THREE.Scene();
-      this.scene.background = new THREE.Color(0x11232d);
-      this.scene.fog = new THREE.FogExp2(0x132d36, 0.009);
+      this.scene.background = new THREE.Color(0x152c3a);
+      this.scene.fog = new THREE.FogExp2(0x213a46, 0.0098);
       this.camera = new THREE.OrthographicCamera(-28, 28, 18, -18, 0.1, 220);
       this.camera.position.set(0, 31, 25);
-      this.scene.add(new THREE.HemisphereLight(0xb9e8ee, 0x354039, 1.65));
-      const sun = new THREE.DirectionalLight(0xffe9c4, 2.4);
+      this.scene.add(new THREE.HemisphereLight(0xd3e1e5, 0x6e5b49, 1.45));
+      const sun = new THREE.DirectionalLight(0xffe1b2, 2.55);
       sun.position.set(-18, 42, 25);
       sun.castShadow = true;
       sun.shadow.mapSize.set(1024, 1024);
@@ -72,7 +72,7 @@ export class ArenaScene {
       sun.shadow.normalBias = 0.035;
       sun.shadow.bias = -0.0002;
       this.scene.add(sun);
-      const rim = new THREE.DirectionalLight(0x62c8ee, 0.9);
+      const rim = new THREE.DirectionalLight(0xa0c3e7, 0.74);
       rim.position.set(12, 12, -28);
       this.scene.add(rim);
       this.world = new THREE.Group();
@@ -80,7 +80,6 @@ export class ArenaScene {
       this.fxLayer = new THREE.Group();
       this.scene.add(this.world, this.actors, this.fxLayer);
       this.buildWorld();
-      this.batchStaticScenery();
       this.buildAim();
       this.buildPreview();
       this.onResize = () => this.resize();
@@ -128,100 +127,9 @@ export class ArenaScene {
   }
 
   buildWorld() {
-    const random = rng(80713);
-    // Deep river, softly scrolling hand-painted ripples, and distant banks.
-    const waterCanvas = document.createElement('canvas'); waterCanvas.width = waterCanvas.height = 256;
-    const wc = waterCanvas.getContext('2d');
-    wc.fillStyle = '#123e49'; wc.fillRect(0, 0, 256, 256);
-    for (let n = 0; n < 120; n++) { const x = random() * 256, y = random() * 256; wc.strokeStyle = `rgba(104,184,184,${0.03 + random() * 0.1})`; wc.lineWidth = 1 + random() * 2; wc.beginPath(); wc.ellipse(x, y, 9 + random() * 20, 2 + random() * 4, -0.35, 0, Math.PI * 1.7); wc.stroke(); }
-    this.waterTexture = new THREE.CanvasTexture(waterCanvas); this.waterTexture.wrapS = this.waterTexture.wrapT = THREE.RepeatWrapping; this.waterTexture.repeat.set(12, 10); this.waterTexture.colorSpace = THREE.SRGBColorSpace; this.textures.add(this.waterTexture);
-    const waterMat = new THREE.MeshStandardMaterial({ color: 0x517e82, map: this.waterTexture, roughness: 0.28, metalness: 0.6 });
-    this.waterMaterial = waterMat;
-    const water = new THREE.Mesh(this.geometry('plane', 210, 180), waterMat); water.rotation.x = -Math.PI / 2; water.position.y = -4.9; this.world.add(water);
-    this.mesh(this.world, 'box', [83, 1.5, 17], 0x374b4e, [0, -0.05, 0]);
-    // Hundreds of individual pavers in one GPU draw call.
-    const tileGeometry = this.geometry('box', 2.43, 0.3, 2.43), tileMat = this.material(0x75817b, 0, 1, 0.05);
-    const pavers = new THREE.InstancedMesh(tileGeometry, tileMat, 32 * 6); pavers.receiveShadow = true;
-    const dummy = new THREE.Object3D(), tone = new THREE.Color(); let count = 0;
-    for (let i = 0; i < 32; i++) for (let j = 0; j < 6; j++) { dummy.position.set(-38.75 + i * 2.5, 0.65 + random() * 0.025, -6.25 + j * 2.5); dummy.rotation.y = (random() - 0.5) * 0.015; dummy.updateMatrix(); pavers.setMatrixAt(count, dummy.matrix); tone.setHSL(0.16 + random() * 0.025, 0.09, 0.36 + random() * 0.09); pavers.setColorAt(count++, tone); }
-    this.world.add(pavers);
-    for (const z of [-7.8, 7.8]) {
-      this.mesh(this.world, 'box', [82, 0.45, 0.48], 0x9c9c83, [0, 0.95, z]);
-      this.mesh(this.world, 'box', [80, 0.12, 0.11], 0xb5a675, [0, 1.22, z]);
-    }
-    // Heavy bridge piers, stone parapets, rune lamps and arched buttresses.
-    for (const x of [-36, -24, -12, 0, 12, 24, 36]) {
-      for (const z of [-7.8, 7.8]) {
-        this.mesh(this.world, 'box', [1.35, 5.8, 1.55], 0x344c51, [x, -2.1, z]);
-        this.mesh(this.world, 'box', [1.8, 0.4, 1.95], 0x8c968a, [x, 1.25, z]);
-        this.mesh(this.world, 'box', [0.92, 1.7, 0.92], 0x4d6666, [x, 2.15, z]);
-        this.mesh(this.world, 'box', [1.25, 0.2, 1.25], 0xa9a18a, [x, 3.1, z]);
-        this.mesh(this.world, 'octa', [0.34], x <= 0 ? TEAM[0] : TEAM[1], [x, 3.55, z], [0, 0.3, 0], { glow: 1.3 });
-        this.ring(this.world, 0.65, x <= 0 ? TEAM[0] : TEAM[1], 1.5, 0.07, 0.3).position.set(x, 1.5, z);
-      }
-    }
-    for (const z of [-5.1, 5.1]) for (let x = -32; x <= 32; x += 8) {
-      const tile = this.mesh(this.world, 'box', [1.15, 0.025, 1.15], 0xbba66b, [x, 0.83, z], [0, Math.PI / 4, 0], { glow: 0.04, shadow: false });
-      tile.scale.z = 0.35;
-    }
-    const middle = new THREE.Group(); this.world.add(middle);
-    this.ring(middle, 3.0, 0xc8b785, 0.84, 0.11, 0.58); this.ring(middle, 2.45, 0x78928d, 0.85, 0.035, 0.7);
-    for (let n = 0; n < 8; n++) { const a = n * Math.PI / 4; this.mesh(middle, 'box', [0.38, 0.025, 0.38], 0xc1b27b, [Math.cos(a) * 2.7, 0.85, Math.sin(a) * 2.7], [0, a, 0], { glow: 0.1, shadow: false }); }
-    // Team fountains remain visible even while their nexus is destroyed.
-    for (let team = 0; team < 2; team++) {
-      const x = team ? 34 : -34, fountain = new THREE.Group(); fountain.position.x = x; this.world.add(fountain);
-      this.mesh(fountain, 'cylinder', [4.5, 4.8, 0.22, 12], 0x657974, [0, 0.85, 0]);
-      this.ring(fountain, 4.1, TEAM[team], 0.98, 0.11, 0.65); this.ring(fountain, 3.6, TEAM[team], 1.0, 0.035, 0.35);
-      for (let n = 0; n < 6; n++) { const a = n * Math.PI / 3; this.mesh(fountain, 'box', [0.5, 0.03, 0.5], TEAM[team], [Math.cos(a) * 3.85, 1.01, Math.sin(a) * 3.85], [0, a, 0], { glow: 0.8, shadow: false }); }
-    }
-    // Mossy river banks, evergreen groves, exposed faceted stone.
-    const bankGeo = this.geometry('ico', 1, 0), bankMat = this.material(0x2f4c4b, 0, 1, 0);
-    const rocks = new THREE.InstancedMesh(bankGeo, bankMat, 100), trunks = new THREE.InstancedMesh(this.geometry('cylinder', 0.17, 0.28, 2.1, 5), this.material(0x4b4940), 90), trees = new THREE.InstancedMesh(this.geometry('cone', 1.6, 5.2, 6), this.material(0x214b49), 90);
-    for (let n = 0; n < 100; n++) { const side = n % 2 ? 1 : -1, x = (random() - 0.5) * 118, z = side * (15 + random() * 23); dummy.position.set(x, -3.8, z); dummy.rotation.set(random() * 0.3, random() * 7, random() * 0.4); dummy.scale.set(3 + random() * 4, 3 + random() * 4, 2 + random() * 4); dummy.updateMatrix(); rocks.setMatrixAt(n, dummy.matrix); }
-    for (let n = 0; n < 90; n++) { const side = n % 2 ? 1 : -1; dummy.position.set((random() - 0.5) * 115, -0.4, side * (20 + random() * 28)); dummy.rotation.set(0, random() * 6, 0); const s = 0.7 + random() * 0.75; dummy.scale.setScalar(s); dummy.updateMatrix(); trunks.setMatrixAt(n, dummy.matrix); dummy.position.y += 2.15 * s; dummy.updateMatrix(); trees.setMatrixAt(n, dummy.matrix); }
-    rocks.castShadow = trees.castShadow = true; this.world.add(rocks, trunks, trees);
-    this.buildBush(-10, -6, random); this.buildBush(10, 6, random);
-    const dust = new Float32Array(110 * 3);
-    for (let n = 0; n < 110; n++) { dust[n * 3] = (random() - 0.5) * 90; dust[n * 3 + 1] = random() * 10 + 1; dust[n * 3 + 2] = (random() - 0.5) * 35; }
-    const dustGeo = new THREE.BufferGeometry(); dustGeo.setAttribute('position', new THREE.BufferAttribute(dust, 3)); this.dustGeometry = dustGeo;
-    this.dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: 0xc5e5df, size: 0.065, transparent: true, opacity: 0.5, depthWrite: false })); this.world.add(this.dust);
-  }
-
-  buildBush(x, z, random) {
-    const patch = this.mesh(this.world, 'circle', [2.65, 24], 0x364f40, [x, 0.88, z], [-Math.PI / 2, 0, 0], { shadow: false }); patch.scale.y = 0.75;
-    const blades = new THREE.InstancedMesh(this.geometry('cone', 0.18, 1.15, 4), this.material(0x78936a), 90), dummy = new THREE.Object3D();
-    for (let n = 0; n < 90; n++) { const a = random() * Math.PI * 2, r = Math.sqrt(random()) * 2.6; dummy.position.set(x + Math.cos(a) * r, 1.25 + random() * 0.25, z + Math.sin(a) * r * 0.6); dummy.rotation.set((random() - 0.5) * 0.4, random() * 6, (random() - 0.5) * 0.4); dummy.scale.set(1, 0.75 + random() * 0.55, 1); dummy.updateMatrix(); blades.setMatrixAt(n, dummy.matrix); }
-    blades.castShadow = true; this.world.add(blades);
-  }
-
-  batchStaticScenery() {
-    // Merge unmoving stonework by material while keeping foliage instanced.
-    this.world.updateMatrixWorld(true);
-    this.mergedGeometries = [];
-    const groups = new Map();
-    this.world.traverse(object => {
-      if (!object.isMesh || object.isInstancedMesh || object.material.transparent || !object.geometry.attributes.position || !object.geometry.attributes.normal) return;
-      const key = `${object.material.uuid}:${object.castShadow}:${object.receiveShadow}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(object);
-    });
-    const vertex = new THREE.Vector3(), normal = new THREE.Vector3();
-    for (const meshes of groups.values()) {
-      if (meshes.length < 3) continue;
-      const positions = [], normals = [], uvs = [];
-      for (const object of meshes) {
-        const source = object.geometry.index ? object.geometry.toNonIndexed() : object.geometry;
-        const pos = source.attributes.position, nor = source.attributes.normal, uv = source.attributes.uv, normalMatrix = new THREE.Matrix3().getNormalMatrix(object.matrixWorld);
-        for (let i = 0; i < pos.count; i++) {
-          vertex.fromBufferAttribute(pos, i).applyMatrix4(object.matrixWorld); normal.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
-          positions.push(vertex.x, vertex.y, vertex.z); normals.push(normal.x, normal.y, normal.z); uvs.push(uv ? uv.getX(i) : 0, uv ? uv.getY(i) : 0);
-        }
-        if (source !== object.geometry) source.dispose();
-        object.removeFromParent();
-      }
-      const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3)); geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2)); geometry.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geometry, meshes[0].material); mesh.castShadow = meshes[0].castShadow; mesh.receiveShadow = meshes[0].receiveShadow; this.world.add(mesh); this.mergedGeometries.push(geometry);
-    }
+    this.environment = buildArenaEnvironment(this.world);
+    this.waterTexture = this.environment.waterTexture;
+    this.dust = this.environment.dust;
   }
 
   humanoid(champion = 'garen', team = 0, minion = false) {
@@ -355,24 +263,42 @@ export class ArenaScene {
   }
 
   structure(kind, team) {
-    const root = new THREE.Group(), body = new THREE.Group(), ruins = new THREE.Group(); root.add(body, ruins); ruins.visible = false;
-    const color = TEAM[team];
-    this.mesh(body, 'cylinder', [kind === 'tower' ? 1.65 : 2.5, kind === 'tower' ? 1.9 : 2.9, 0.45, 8], 0x68797a, [0, 0.2, 0]);
-    this.mesh(body, 'cylinder', [kind === 'tower' ? 1.25 : 2.0, kind === 'tower' ? 1.4 : 2.3, 0.35, 8], 0xb1aa8b, [0, 0.6, 0]);
-    if (kind === 'tower') {
-      this.mesh(body, 'cylinder', [0.75, 1.05, 3.2, 7], 0x65787b, [0, 2.1, 0]);
-      for (let n = 0; n < 4; n++) { const a = n * Math.PI / 2; this.mesh(body, 'box', [0.35, 2.4, 0.35], 0xa29e82, [Math.cos(a) * 0.82, 2.3, Math.sin(a) * 0.82], [0, a, 0]); }
-      this.mesh(body, 'cylinder', [1.25, 0.9, 0.35, 8], 0xb9aa84, [0, 3.9, 0]);
-      this.mesh(body, 'torus', [0.92, 0.11, 5, 20], 0xc5b584, [0, 4.25, 0], [Math.PI / 2, 0, 0]);
-      const crystal = this.mesh(body, 'octa', [0.85], color, [0, 4.8, 0], [0, Math.PI / 4, 0], { glow: 0.85, metalness: 0.55 }); crystal.scale.y = 1.5;
-      root.userData.crystal = crystal;
-    } else {
-      for (let n = 0; n < 4; n++) { const a = n * Math.PI / 2; this.mesh(body, 'cone', [0.7, 1.7, 4], 0x8b9185, [Math.cos(a) * 1.65, 1.4, Math.sin(a) * 1.65], [0, -a, 0.2]); }
-      const crystal = this.mesh(body, 'octa', [1.6], color, [0, 3.1, 0], [0, 0.4, 0], { glow: 0.65, metalness: 0.6 }); crystal.scale.y = 1.65; root.userData.crystal = crystal;
-      this.ring(body, 2.25, color, 0.9, 0.08, 0.6);
-    }
-    for (let n = 0; n < 8; n++) { const a = n * Math.PI / 4; this.mesh(ruins, 'ico', [0.75, 0], 0x687575, [Math.cos(a) * (n % 3 + 0.4), 0.35, Math.sin(a) * (n % 2 + 0.6)], [a, a / 2, 0]); }
-    root.userData = { ...root.userData, body, ruins, kind }; return root;
+    const root = new THREE.Group(), body = new THREE.Group(), ruins = new THREE.Group(), tower = kind === 'tower';
+    root.add(body, ruins); ruins.visible = false;
+    const shape = (key, create) => {
+      const id = `sanctuary:${key}`;
+      if (!this.geometries.has(id)) this.geometries.set(id, create());
+      return this.geometries.get(id);
+    };
+    const surface = (key, options) => {
+      const id = `sanctuary:${key}`;
+      if (!this.materials.has(id)) this.materials.set(id, new THREE.MeshStandardMaterial(options));
+      return this.materials.get(id);
+    };
+    const stone = surface('stone', { color: 0xd5d8bd, map: this.environment?.stoneTexture ?? null, roughness: .83 });
+    const bronze = surface('bronze', { color: 0xb68f56, metalness: .53, roughness: .44 });
+    const profile = tower ? [[0,.015],[1.72,.015],[1.88,.13],[1.88,.23],[1.73,.34],[1.49,.35],[1.37,.48],[1.33,.65],[1.19,.80],[1.08,.94],[.9,1.16],[.78,1.35],[.64,2.69],[.69,3.02],[.78,3.21],[.9,3.35],[1.06,3.57],[1.07,3.78],[.94,3.94],[.64,4.04],[0,4.04]]
+      : [[0,.01],[2.58,.01],[2.73,.14],[2.71,.26],[2.53,.40],[2.25,.44],[2.18,.56],[1.95,.62],[1.86,.79],[1.54,.95],[1.36,1.03],[0,1.03]];
+    const pedestal = new THREE.Mesh(shape(kind, () => new THREE.LatheGeometry(profile.map(([r, y]) => new THREE.Vector2(r, y)), tower ? 20 : 24)), stone);
+    pedestal.castShadow = pedestal.receiveShadow = true; body.add(pedestal);
+    const repeat = (geometry, material, objects, parent = body) => {
+      const meshes = new THREE.InstancedMesh(geometry, material, objects.length), dummy = new THREE.Object3D();
+      objects.forEach(({ x = 0, y = 0, z = 0, rx = 0, ry = 0, sx = 1, sy = 1, sz = 1 }, i) => { dummy.position.set(x, y, z); dummy.rotation.set(rx, ry, 0); dummy.scale.set(sx, sy, sz); dummy.updateMatrix(); meshes.setMatrixAt(i, dummy.matrix); });
+      meshes.receiveShadow = true; meshes.computeBoundingSphere(); parent.add(meshes); return meshes;
+    };
+    const bands = tower ? [[1.53,.37],[1.36,.62],[.88,3.36],[1.05,3.76]] : [[2.48,.41],[2.14,.59],[1.62,.91]];
+    repeat(this.geometry('torus', 1, .036, 5, 36), bronze, bands.map(([s,y]) => ({ y, rx: -Math.PI/2, sx: s, sy: s, sz: .9 })));
+    const prong = shape(`${kind}:prong`, () => {
+      const points = tower ? [[1.0,.64],[.92,1.35],[.74,2.77],[.89,3.40],[1.14,3.87],[.94,4.31]] : [[1.92,.62],[1.84,1.12],[1.62,1.67],[1.51,2.12],[1.32,2.57],[1.05,2.79]];
+      return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(([r,y]) => new THREE.Vector3(r,y,0))), 13, tower ? .085 : .13, 7);
+    });
+    repeat(prong, bronze, Array.from({length:tower?6:5}, (_, i) => ({ ry:i*Math.PI*2/(tower?6:5) })));
+    const color = TEAM[team], gem = surface(`gem:${team}`, { color, emissive: color, emissiveIntensity: .69, metalness: .3, roughness: .27, flatShading: true });
+    const crystal = new THREE.Mesh(shape('crystal', () => new THREE.LatheGeometry([[0,-1.16],[.57,-.44],[.65,.06],[.52,.54],[0,1.24]].map(([r,y]) => new THREE.Vector2(r,y)), 7)), gem);
+    crystal.position.y = tower ? 4.8 : 3.1; crystal.scale.setScalar(tower ? .79 : 1.39); crystal.rotation.y = .4; crystal.castShadow = true; body.add(crystal);
+    this.ring(body, tower ? .94 : 1.65, color, tower ? 4.06 : 1.05, .05, .55);
+    repeat(this.geometry('ico', .68, 1), stone, Array.from({length:8}, (_, i) => { const a = i*Math.PI/4, r = .37+(i%3)*.64; return { x:Math.cos(a)*r, y:.24+(i%2)*.14, z:Math.sin(a)*r, rx:a, ry:a*.75, sx:1.08, sy:.57+(i%3)*.16, sz:1.04 }; }), ruins);
+    root.userData = { crystal, body, ruins, kind }; return root;
   }
 
   makeLabel(kind) {
@@ -405,7 +331,8 @@ export class ArenaScene {
 
   createEntity(unit) {
     const kind = unit.kind || 'hero';
-    const model = kind === 'hero' ? this.humanoid(unit.champion, unit.team) : kind === 'minion' ? unit.minionType === 'caster' ? this.casterMinion(unit.team) : this.meleeMinion(unit.team) : this.structure(kind, unit.team);
+    const asset = kind === 'hero' ? this.createHeroActor(unit.champion) : null;
+    const model = asset ? new THREE.Group().add(asset.root) : kind === 'hero' ? this.humanoid(unit.champion, unit.team) : kind === 'minion' ? unit.minionType === 'caster' ? this.casterMinion(unit.team) : this.meleeMinion(unit.team) : this.structure(kind, unit.team);
     const group = new THREE.Group(); group.position.set(finite(unit.x), 0.9, finite(unit.z)); group.add(model); this.actors.add(group);
     const label = this.makeLabel(kind); group.add(label.sprite);
     if (kind === 'nexus') label.sprite.position.y = 6;
@@ -419,22 +346,20 @@ export class ArenaScene {
     // Raycast on a separate layer: zero-opacity pick volumes still cost a draw call.
     pick.layers.set(1);
     pick.position.y = kind === 'hero' ? 1.3 : kind === 'minion' ? 0.9 : 2.7; pick.userData.entityId = unit.id; group.add(pick); this.pickTargets.push(pick);
-    const entry = { group, model, label, teamRing, selfRing, shield, recall, pick, data: unit, tx: finite(unit.x), tz: finite(unit.z), px: finite(unit.x), pz: finite(unit.z), vx: 0, vz: 0, angle: 0, swing: -100, phase: Math.random() * 6 };
+    const entry = { group, model, asset, label, teamRing, selfRing, shield, recall, pick, data: unit, tx: finite(unit.x), tz: finite(unit.z), px: finite(unit.x), pz: finite(unit.z), vx: 0, vz: 0, angle: 0, swing: -100, phase: Math.random() * 6 };
     this.entities.set(unit.id, entry); this.updateLabel(entry, { ...unit, kind });
-    if (kind === 'hero') this.requestEntityAsset(entry);
     return entry;
   }
 
-  requestEntityAsset(entry) {
-    const champion = entry.data.champion;
-    if (!hasHeroAsset(champion)) { this.assetStatus[champion] = { status: 'unconfigured' }; return; }
-    this.assetStatus[champion] = { status: 'loading' };
-    loadHeroModel(champion).then(asset => {
-      if (this.disposed || this.entities.get(entry.data.id) !== entry) { asset.dispose(); return; }
-      const model = new THREE.Group(); model.add(asset.root); model.rotation.y = entry.angle;
-      entry.group.remove(entry.model); entry.model = model; entry.group.add(model); entry.asset = asset;
-      asset.play('idle'); this.assetStatus[champion] = { status: 'loaded', clips: asset.clips.length };
-    }).catch(error => { this.assetStatus[champion] = { status: 'error', message: error.message }; });
+  createHeroActor(champion) {
+    try {
+      const asset = createOriginalHero(champion, { height: 3.2 }); asset.play('idle');
+      this.assetStatus[champion] = { status: 'loaded', source: 'original-skinned', clips: asset.clips.length };
+      return asset;
+    } catch (error) {
+      this.assetStatus[champion] = { status: 'error', message: error.message };
+      return null;
+    }
   }
 
   removeEntity(id) {
@@ -446,7 +371,7 @@ export class ArenaScene {
   }
 
   buildPreview() {
-    this.preview = new THREE.Group(); this.preview.position.set(6, 0.92, 0); this.actors.add(this.preview);
+    this.preview = new THREE.Group(); this.preview.position.set(8, 0.92, 0); this.actors.add(this.preview);
     this.previewCircle = this.ring(this.preview, 3.2, 0x84cbd1, 0.01, 0.045, 0.7);
     this.setPreviewChampion(this.previewChampion);
   }
@@ -456,19 +381,12 @@ export class ArenaScene {
     if (this.previewChampion === champion && this.previewModel) return;
     this.previewChampion = champion;
     if (!this.preview) return;
-    const request = ++this.previewAssetRequest;
     this.previewAsset?.dispose(); this.previewAsset = null;
     if (this.previewModel) this.preview.remove(this.previewModel);
-    this.previewModel = this.humanoid(champion, 0); this.previewModel.scale.setScalar(2.1); this.previewModel.rotation.y = -0.2; this.preview.add(this.previewModel);
+    this.previewAsset = this.createHeroActor(champion);
+    this.previewModel = this.previewAsset ? new THREE.Group().add(this.previewAsset.root) : this.humanoid(champion, 0);
+    this.previewModel.scale.setScalar(2.3); this.previewModel.rotation.y = -0.2; this.preview.add(this.previewModel);
     if (this.previewCircle) this.previewCircle.material = this.material(CHAMPION[champion], 0.6, 0.7);
-    if (!hasHeroAsset(champion)) { this.assetStatus[champion] = { status: 'unconfigured' }; return; }
-    this.assetStatus[champion] = { status: 'loading' };
-    loadHeroModel(champion).then(asset => {
-      if (this.disposed || request !== this.previewAssetRequest) { asset.dispose(); return; }
-      const model = new THREE.Group(); model.add(asset.root); model.scale.setScalar(2.1); model.rotation.y = -.2;
-      this.preview.remove(this.previewModel); this.previewModel = model; this.preview.add(model); this.previewAsset = asset;
-      asset.play('idle'); this.assetStatus[champion] = { status: 'loaded', clips: asset.clips.length };
-    }).catch(error => { this.assetStatus[champion] = { status: 'error', message: error.message }; });
   }
 
   setState(state, selfId) {
@@ -621,7 +539,7 @@ export class ArenaScene {
     if (!this.renderer) return;
     const rect = this.canvas.getBoundingClientRect(), width = Math.max(1, rect.width || window.innerWidth), height = Math.max(1, rect.height || window.innerHeight), ratio = width / height;
     this.renderer.setSize(width, height, false);
-    const half = this.state && ['playing', 'finished'].includes(this.state.phase) ? this.zoom : 11.6;
+    const half = this.state && ['playing', 'finished'].includes(this.state.phase) ? this.zoom : PREVIEW_HALF;
     this.camera.left = -half * ratio; this.camera.right = half * ratio; this.camera.top = half; this.camera.bottom = -half; this.camera.updateProjectionMatrix();
     this.lastWidth = width; this.lastHeight = height; this.lastOrthoHalf = half;
   }
@@ -647,12 +565,12 @@ export class ArenaScene {
     const renderStarted = performance.now();
     dt = clamp(finite(dt, 0.016), 0, 0.1); this.clock += dt;
     const playing = this.state && ['playing', 'finished'].includes(this.state.phase);
-    const half = playing ? this.zoom : 11.6; if (half !== this.lastOrthoHalf) this.resize();
+    const half = playing ? this.zoom : PREVIEW_HALF; if (half !== this.lastOrthoHalf) this.resize();
     const self = this.entities.get(this.selfId);
     if (playing && this.locked && self) { this.focusTarget.x = clamp(self.group.position.x + (this.selfTeam ? -5 : 5), -28, 28); this.focusTarget.z = clamp(self.group.position.z, -3.5, 3.5); }
     else if (!playing) this.focusTarget.set(1.8, 0.7, 0);
     this.focus.lerp(this.focusTarget, 1 - Math.exp(-dt * 4.8));
-    this.camera.position.set(this.focus.x, 30 + (this.zoom - 18) * 0.5, this.focus.z + 24); this.camera.lookAt(this.focus);
+    this.camera.position.set(this.focus.x, playing ? 30 + (this.zoom - 18) * 0.5 : 17.8, this.focus.z + 24); this.camera.lookAt(this.focus);
     if (this.waterTexture) { this.waterTexture.offset.x = this.clock * 0.008; this.waterTexture.offset.y = this.clock * 0.004; }
     if (this.dust) { this.dust.position.y = Math.sin(this.clock * 0.2) * 0.4; this.dust.rotation.y = Math.sin(this.clock * 0.025) * 0.015; }
     if (!playing && this.previewModel) { if (this.previewAsset) this.previewAsset.update(dt); else { const body = this.previewModel.userData.body; body.position.y = Math.sin(this.clock * 1.8) * 0.025; } this.previewModel.rotation.y = -0.24 + Math.sin(this.clock * 0.22) * 0.08; this.previewCircle.rotation.z = this.clock * 0.035; }
@@ -708,9 +626,8 @@ export class ArenaScene {
     for (const effect of this.localEffects) effect.ring.material.dispose();
     for (const f of this.floaters) { f.texture.dispose(); f.material.dispose(); }
     for (const material of this.materials.values()) material.dispose(); for (const geometry of this.geometries.values()) geometry.dispose(); for (const texture of this.textures) texture.dispose();
-    for (const geometry of this.mergedGeometries || []) geometry.dispose();
     for (const geometry of this.actorBatchGeometries.values()) geometry.dispose();
     this.previewAsset?.dispose();
-    this.waterMaterial?.dispose(); this.dustGeometry?.dispose(); this.dust?.material.dispose(); this.renderer?.dispose();
+    this.environment?.dispose(); this.renderer?.dispose();
   }
 }

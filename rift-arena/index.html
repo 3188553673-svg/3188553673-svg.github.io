@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#07141b">
 <title>峡谷对决 · 1V1</title><meta name="description" content="四位英雄，一条战线。与朋友在浏览器里展开 1v1 峡谷对决。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%230c202a' d='M0 0h64v64H0z'/%3E%3Cpath fill='%23d4b67c' d='M32 5 54 32 32 59 10 32zm0 10L18 32l14 17 14-17z'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="./style.css?v=perf2">
+<link rel="stylesheet" href="./style.css?v=original1">
 </head>
 <body>
 <canvas id="world" aria-label="三维峡谷战场"></canvas><div class="vignette"></div>
@@ -17,7 +17,7 @@
 <form id="entry-form"><label for="player-name">召唤师代号</label><div class="entry-fields"><input id="player-name" maxlength="12" autocomplete="nickname" placeholder="输入代号" required><button id="create-btn" class="button gold" disabled>创建房间 <span>↗</span></button></div></form>
 <div class="entry-secondary"><button id="join-open-btn" class="button outline" disabled>加入朋友 <span>→</span></button><button id="practice-btn" class="button ghost" disabled>电脑练习 <span>⚔</span></button></div>
 <p id="entry-status" class="entry-status" role="status" aria-live="polite"></p><div class="entry-foot"><span><b>04</b> 位英雄</span><span><b>01</b> 条战线</span><span>推塔 · 发育 · 对决</span></div>
-</section><aside class="hero-caption"><span id="preview-role">THE MIGHT OF DEMACIA</span><b id="preview-name">盖伦</b><small>右键移动与攻击　·　Q W E R 技能</small></aside>
+</section><aside class="hero-caption"><span id="preview-role">SKYWARD OATH</span><b id="preview-name">苍穹骑士</b><small>右键移动与攻击　·　Q W E R 技能</small></aside>
 </main>
 <main id="lobby" class="screen lobby hidden"><section class="lobby-content"><div class="eyebrow">THE LAST QUIET MOMENT</div><h1>决战之前，<br>选好你的<span>武器。</span></h1><p class="lobby-copy">将邀请链接发给朋友，准备好后开始对决。</p><div class="room-share"><small>房间码 / ROOM CODE</small><div class="room-code-row"><b id="room-code">----</b><span>1V1 单路对决</span></div><div class="invite-row"><code id="invite-url"></code><button id="copy-invite-btn" class="quiet-button">复制</button></div></div><div id="lobby-players" class="lobby-players"></div><div class="lobby-roster" id="lobby-roster"></div><div class="lobby-actions"><button id="ready-btn" class="button outline">锁定英雄 / 准备</button><button id="start-btn" class="button gold" disabled>等待对手加入</button></div><div class="lobby-bottom"><button id="add-bot-btn" class="text-button">添加电脑对手</button><button id="leave-lobby-btn" class="text-button muted">离开房间</button></div><p id="lobby-status" class="muted">双方准备后，由房主开始。</p></section></main>
 <section id="hud" class="hud hidden" aria-label="对局信息">
@@ -40,5 +40,5 @@
 <dialog id="result-dialog" class="dialog result-dialog"><div class="victory-emblem">◈</div><small id="result-small">THE NEXUS HAS FALLEN</small><h2 id="result-title">胜利</h2><p id="result-detail"></p><div id="result-stats" class="result-stats"></div><button id="rematch-btn" class="button gold">再战一局 ↗</button><button id="result-leave-btn" class="text-button">离开房间</button></dialog>
 <div id="toast" class="toast" role="status" aria-live="polite"></div><div id="graphics-error" class="graphics-error hidden"><h2>战场画面未能启动</h2><p>请使用新版 Chrome、Edge 或 Safari，并开启图形加速后刷新。</p><p id="graphics-detail"></p></div>
 <script>setTimeout(function(){var n=document.getElementById('load-detail');if(n&&document.getElementById('load-screen').style.display!=='none')n.textContent='仍在加载画面资源，请保持页面开启；网络较慢时可稍后刷新。'},18000);</script>
-<script type="module" src="./app.js?v=perf2"></script>
+<script type="module" src="./app.js?v=original1"></script>
 </body></html>

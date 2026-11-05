@@ -1,1 +1,1 @@
-{"name":"rift-arena-duel","version":"0.2.0","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"start":"node server.js","test":"node --test tests/*.test.mjs"}}
+{"name":"rift-arena-duel","version":"0.3.0","private":true,"type":"module","engines":{"node":">=22"},"scripts":{"start":"node server.js","test":"node --test tests/*.test.mjs"}}

@@ -1,12 +1,11 @@
 import * as THREE from './vendor/three.module.js';
-import { GLTFLoader } from './vendor/GLTFLoader.js';
-import { clone as cloneSkeleton } from './vendor/SkeletonUtils.js';
 
 // Only register assets the project is allowed to use. No third-party character
 // models or remote asset hosts are configured implicitly by this module.
 const registry = new Map();
 const templates = new Map();
-const loader = new GLTFLoader();
+let loaderPromise;
+function runtime(){return loaderPromise??=Promise.all([import('./vendor/GLTFLoader.js'),import('./vendor/SkeletonUtils.js')]).then(([g,s])=>({loader:new g.GLTFLoader(),cloneSkeleton:s.clone}));}
 const locomotionStates = new Set(['idle', 'run']);
 const automaticNames = {
   idle: /(?:^idle(?:1)?(?:_|$)|idle1)/i,
@@ -31,7 +30,7 @@ export function hasHeroAsset(champion) {
 
 async function getTemplate(url) {
   if (!templates.has(url)) {
-    const promise = loader.loadAsync(url).catch(error => {
+    const promise = runtime().then(({loader})=>loader.loadAsync(url)).catch(error => {
       templates.delete(url);
       throw error;
     });
@@ -61,6 +60,7 @@ export async function loadHeroModel(champion, options = {}) {
   if (!descriptor.url) throw new Error(`No licensed 3D asset is configured for ${champion}.`);
   const url = new URL(descriptor.url, import.meta.url).href;
   const gltf = await getTemplate(url);
+  const {cloneSkeleton}=await runtime();
   const model = cloneSkeleton(gltf.scene);
   const root = new THREE.Group();
   root.name = `${champion}-animated-model`;
