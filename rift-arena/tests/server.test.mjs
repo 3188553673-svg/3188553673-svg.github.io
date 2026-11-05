@@ -39,6 +39,10 @@ test('HTTP identifies this game, supports Pages health CORS, and blocks server s
   const definitions = await fetch(base + '/shared/definitions.js');
   assert.equal(definitions.status, 200);
   assert.match(await definitions.text(), /CHAMPIONS/);
+  for(const route of ['/client-movement.js','/scene-performance.js','/hero-assets.js','/vendor/GLTFLoader.js','/vendor/SkeletonUtils.js','/vendor/BufferGeometryUtils.js']) {
+    const response=await fetch(base+route);assert.equal(response.status,200,route);
+    assert.match(response.headers.get('content-type'),/javascript/,route);
+  }
   for (const route of ['/server.js', '/server/engine.js', '/package.json', '/tests/server.test.mjs', '/assets/%2e%2e%2fserver.js']) {
     assert.equal((await fetch(base + route)).status, 404, route);
   }
@@ -92,4 +96,38 @@ test('one-click practice starts a server-run bot and closing the human removes t
   p.ws.close();
   for (let i = 0; i < 50 && arena.rooms.has(w.room); i++) await delay(10);
   assert.equal(arena.rooms.has(w.room), false);
+});
+
+test('sequenced input receives lightweight acknowledgements while snapshots retain one tick cadence', async t => {
+  const {base,connect}=await setup(t),p=await connect();
+  assert.equal((await fetch(base+'/client-movement.js')).status,200);
+  p.send({type:'join',create:true,practice:true,name:'预测回归',champion:'lux'});
+  const w=await p.wait(m=>m.type==='welcome');await p.wait(m=>m.type==='state'&&m.state.phase==='playing');
+  const from=p.messages.length;
+  for(let seq=1;seq<=20;seq++)p.send({type:'move',x:-30+seq*.1,z:-4,seq});
+  await p.wait(m=>m.type==='input_ack'&&m.seq===20&&m.accepted===true);
+  const synced=(await p.wait(m=>m.type==='state'&&m.state.heroes.some(h=>h.id===w.id&&h.lastInputSeq===20))).state;
+  assert.deepEqual(synced.heroes.find(h=>h.id===w.id).moveTarget,{x:-28,z:-4});
+  await delay(220);
+  const states=p.messages.slice(from).filter(m=>m.type==='state');
+  assert.ok(states.length<12,`a burst must not emit a full snapshot per action (${states.length})`);
+  assert.equal(new Set(states.map(m=>m.state.tick)).size,states.length,'playing snapshots have unique simulation ticks');
+  p.send({type:'move',x:25,z:0,seq:20});
+  const duplicate=await p.wait(m=>m.type==='input_ack'&&m.seq===20&&m.duplicate===true);
+  assert.equal(Object.hasOwn(duplicate,'accepted'),false,'a repeated command is not falsely reaccepted');
+  p.send({type:'ability',slot:'r',x:10,z:0,seq:21});
+  await p.wait(m=>m.type==='input_ack'&&m.seq===21&&m.accepted===false);
+  assert.equal((await p.wait(m=>m.type==='error'&&m.seq===21)).code,'LEVEL');
+  await p.wait(m=>m.type==='state'&&m.state.heroes.some(h=>h.id===w.id&&h.lastInputSeq===21));
+});
+
+test('a short event-loop stall catches up through bounded fixed simulation steps',async t=>{
+  const {arena,connect}=await setup(t),p=await connect();
+  p.send({type:'join',create:true,practice:true,name:'步进回归',champion:'garen'});
+  const w=await p.wait(m=>m.type==='welcome');await p.wait(m=>m.type==='state'&&m.state.phase==='playing');
+  const room=arena.rooms.get(w.room),before=room.time;
+  const until=performance.now()+220;while(performance.now()<until) { /* Simulate one bounded scheduling stall. */ }
+  await delay(15);
+  assert.ok(room.time-before>=.2-1e-8,`220ms stall advanced only ${room.time-before}s`);
+  assert.ok(room.time-before<=.3+1e-8,'catch-up work remains bounded');
 });

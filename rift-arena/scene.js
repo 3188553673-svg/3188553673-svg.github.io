@@ -1,4 +1,7 @@
 import * as THREE from './vendor/three.module.js';
+import { FrameBudget } from './scene-performance.js?v=perf2';
+import { MovementPredictor } from './client-movement.js?v=perf2';
+import { hasHeroAsset, loadHeroModel } from './hero-assets.js?v=perf2';
 
 const TEAM = [0x47d9ed, 0xf16c80];
 const CHAMPION = { garen: 0x65a8da, ashe: 0x96e7ff, lux: 0xf6cf73, yi: 0x94d382 };
@@ -25,6 +28,14 @@ export class ArenaScene {
     this.clock = 0;
     this.lastSnapshot = 0;
     this.snapshotTime = 0;
+    this.motionSampleSeen = false;
+    this.motionTick = -1;
+    this.predictor = new MovementPredictor();
+    this.frameBudget = new FrameBudget(window.devicePixelRatio || 1);
+    this.performance = this.frameBudget.metrics;
+    this.assetStatus = {};
+    this.previewAssetRequest = 0;
+    this.actorBatchGeometries = new Map();
     this.state = null;
     this.selfId = null;
     this.selfTeam = 0;
@@ -33,6 +44,7 @@ export class ArenaScene {
     this.focus = new THREE.Vector3(0, 0.7, 0);
     this.focusTarget = this.focus.clone();
     this.raycaster = new THREE.Raycaster();
+    this.raycaster.layers.set(1);
     this.pointer = new THREE.Vector2();
     this.ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.88);
     this.pickTargets = [];
@@ -40,7 +52,7 @@ export class ArenaScene {
     this.disposed = false;
     try {
       this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
-      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.7));
+      this.renderer.setPixelRatio(this.frameBudget.ratio);
       this.renderer.outputColorSpace = THREE.SRGBColorSpace;
       this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
       this.renderer.toneMappingExposure = 1.22;
@@ -55,7 +67,7 @@ export class ArenaScene {
       const sun = new THREE.DirectionalLight(0xffe9c4, 2.4);
       sun.position.set(-18, 42, 25);
       sun.castShadow = true;
-      sun.shadow.mapSize.set(1536, 1536);
+      sun.shadow.mapSize.set(1024, 1024);
       Object.assign(sun.shadow.camera, { left: -48, right: 48, top: 28, bottom: -28, near: 1, far: 110 });
       sun.shadow.normalBias = 0.035;
       sun.shadow.bias = -0.0002;
@@ -286,7 +298,7 @@ export class ArenaScene {
     this.mesh(body, 'box', [0.12, 0.05, 0.04], 0xe1eacf, [0, 1.34, 0.24], [0, 0, 0], { glow: 0.8 });
     this.mesh(body, 'cylinder', [0.045, 0.045, 1.35, 5], 0x8f8767, [0.43, 0.82, 0.1]);
     this.mesh(body, 'octa', [0.18], TEAM[team], [0.43, 1.65, 0.1], [0, 0, 0], { glow: 1 });
-    root.userData = { body, limbs: {}, champion: 'caster', minion: true }; return root;
+    root.userData = { body, limbs: {}, champion: 'caster', minion: true }; this.batchMinionParts(root, `caster:${team}`); return root;
   }
 
   meleeMinion(team) {
@@ -301,7 +313,45 @@ export class ArenaScene {
     }
     this.mesh(limbs.leftArm, 'box', [0.38, 0.48, 0.12], 0xbaa56f, [0, -0.25, 0.22]);
     this.mesh(limbs.rightArm, 'box', [0.11, 0.78, 0.07], 0xc7d5d2, [0, 0.05, 0.15]);
-    root.userData = { body, limbs, champion: 'melee', minion: true }; return root;
+    root.userData = { body, limbs, champion: 'melee', minion: true }; this.batchMinionParts(root, `melee:${team}`); return root;
+  }
+
+  // Preserve limb animation and vertex colors; merge only rigid siblings.
+  batchMinionParts(root, cachePrefix) {
+    let groupIndex = 0;
+    root.traverse(parent => {
+      const index = groupIndex++, groups = new Map();
+      for (const mesh of parent.children) {
+        if (!mesh.isMesh || mesh.isInstancedMesh || mesh.material.transparent || mesh.material.emissiveIntensity > 0) continue;
+        const key = `${mesh.material.metalness}:${mesh.material.roughness}:${mesh.material.side}`;
+        if (!groups.has(key)) groups.set(key, []); groups.get(key).push(mesh);
+      }
+      for (const [materialKey, meshes] of groups) {
+        if (meshes.length < 2) continue;
+        const key = `${cachePrefix}:${index}:${materialKey}`;
+        let geometry = this.actorBatchGeometries.get(key);
+        if (!geometry) {
+          const positions = [], normals = [], colors = [], v = new THREE.Vector3(), n = new THREE.Vector3();
+          for (const mesh of meshes) {
+            mesh.updateMatrix(); const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
+            const normalMatrix = new THREE.Matrix3().getNormalMatrix(mesh.matrix), pos = source.attributes.position, nor = source.attributes.normal, color = mesh.material.color;
+            for (let i = 0; i < pos.count; i++) {
+              v.fromBufferAttribute(pos, i).applyMatrix4(mesh.matrix); n.fromBufferAttribute(nor, i).applyMatrix3(normalMatrix).normalize();
+              positions.push(v.x, v.y, v.z); normals.push(n.x, n.y, n.z); colors.push(color.r, color.g, color.b);
+            }
+            if (source !== mesh.geometry) source.dispose();
+          }
+          geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3)); geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3)); geometry.computeBoundingSphere();
+          this.actorBatchGeometries.set(key, geometry);
+        }
+        const materialCacheKey = `minion-batch:${materialKey}`;
+        let material = this.materials.get(materialCacheKey);
+        if (!material) { material = meshes[0].material.clone(); material.color.set(0xffffff); material.vertexColors = true; this.materials.set(materialCacheKey, material); }
+        const merged = new THREE.Mesh(geometry, material); merged.receiveShadow = true; merged.castShadow = false;
+        for (const mesh of meshes) parent.remove(mesh); parent.add(merged);
+      }
+    });
+    root.traverse(object => { if (object.isMesh) object.castShadow = false; });
   }
 
   structure(kind, team) {
@@ -366,14 +416,30 @@ export class ArenaScene {
     if (shield) { shield.scale.y = 1.3; shield.visible = false; }
     const recall = new THREE.Group(); group.add(recall); recall.visible = false; for (let i = 0; i < 3; i++) this.ring(recall, 1.2 - i * 0.08, 0x7ec5ed, i * 0.7 + 0.08, 0.04, 0.65);
     const pick = new THREE.Mesh(this.geometry('cylinder', radius, radius, kind === 'hero' ? 2.6 : kind === 'minion' ? 1.7 : 5.5, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false }));
+    // Raycast on a separate layer: zero-opacity pick volumes still cost a draw call.
+    pick.layers.set(1);
     pick.position.y = kind === 'hero' ? 1.3 : kind === 'minion' ? 0.9 : 2.7; pick.userData.entityId = unit.id; group.add(pick); this.pickTargets.push(pick);
     const entry = { group, model, label, teamRing, selfRing, shield, recall, pick, data: unit, tx: finite(unit.x), tz: finite(unit.z), px: finite(unit.x), pz: finite(unit.z), vx: 0, vz: 0, angle: 0, swing: -100, phase: Math.random() * 6 };
     this.entities.set(unit.id, entry); this.updateLabel(entry, { ...unit, kind });
+    if (kind === 'hero') this.requestEntityAsset(entry);
     return entry;
+  }
+
+  requestEntityAsset(entry) {
+    const champion = entry.data.champion;
+    if (!hasHeroAsset(champion)) { this.assetStatus[champion] = { status: 'unconfigured' }; return; }
+    this.assetStatus[champion] = { status: 'loading' };
+    loadHeroModel(champion).then(asset => {
+      if (this.disposed || this.entities.get(entry.data.id) !== entry) { asset.dispose(); return; }
+      const model = new THREE.Group(); model.add(asset.root); model.rotation.y = entry.angle;
+      entry.group.remove(entry.model); entry.model = model; entry.group.add(model); entry.asset = asset;
+      asset.play('idle'); this.assetStatus[champion] = { status: 'loaded', clips: asset.clips.length };
+    }).catch(error => { this.assetStatus[champion] = { status: 'error', message: error.message }; });
   }
 
   removeEntity(id) {
     const entry = this.entities.get(id); if (!entry) return;
+    entry.asset?.dispose();
     this.actors.remove(entry.group); this.pickTargets = this.pickTargets.filter(mesh => mesh !== entry.pick);
     entry.pick.material.dispose(); entry.label.texture.dispose(); this.textures.delete(entry.label.texture); entry.label.material.dispose();
     this.entities.delete(id);
@@ -390,9 +456,19 @@ export class ArenaScene {
     if (this.previewChampion === champion && this.previewModel) return;
     this.previewChampion = champion;
     if (!this.preview) return;
+    const request = ++this.previewAssetRequest;
+    this.previewAsset?.dispose(); this.previewAsset = null;
     if (this.previewModel) this.preview.remove(this.previewModel);
     this.previewModel = this.humanoid(champion, 0); this.previewModel.scale.setScalar(2.1); this.previewModel.rotation.y = -0.2; this.preview.add(this.previewModel);
     if (this.previewCircle) this.previewCircle.material = this.material(CHAMPION[champion], 0.6, 0.7);
+    if (!hasHeroAsset(champion)) { this.assetStatus[champion] = { status: 'unconfigured' }; return; }
+    this.assetStatus[champion] = { status: 'loading' };
+    loadHeroModel(champion).then(asset => {
+      if (this.disposed || request !== this.previewAssetRequest) { asset.dispose(); return; }
+      const model = new THREE.Group(); model.add(asset.root); model.scale.setScalar(2.1); model.rotation.y = -.2;
+      this.preview.remove(this.previewModel); this.previewModel = model; this.preview.add(model); this.previewAsset = asset;
+      asset.play('idle'); this.assetStatus[champion] = { status: 'loaded', clips: asset.clips.length };
+    }).catch(error => { this.assetStatus[champion] = { status: 'error', message: error.message }; });
   }
 
   setState(state, selfId) {
@@ -408,29 +484,36 @@ export class ArenaScene {
       for (const effect of this.effects.values()) this.removeEffect(effect); this.effects.clear();
       for (const effect of this.localEffects) { this.fxLayer.remove(effect.group); effect.ring.material.dispose(); } this.localEffects.length = 0;
       for (const f of this.floaters) { this.fxLayer.remove(f.sprite); f.texture.dispose(); f.material.dispose(); } this.floaters.length = 0;
+      this.predictor.reset(); this.motionSampleSeen = false; this.motionTick = -1; this.snapshotTime = 0;
       return;
     }
     this.selfTeam = state.players?.find(p => p.id === selfId)?.team ?? state.heroes?.find(p => p.id === selfId)?.team ?? 0;
-    const time = finite(state.time), delta = Math.max(0.03, time - this.snapshotTime), ids = new Set();
+    const time = finite(state.time), advancingMotion = !this.motionSampleSeen || time > this.snapshotTime + 0.00001, delta = Math.max(0.03, time - this.snapshotTime), ids = new Set();
     for (const unit of [...(state.structures || []), ...(state.minions || []), ...(state.heroes || [])]) {
       if (!unit?.id || !Number.isFinite(unit.x) || !Number.isFinite(unit.z)) continue;
       ids.add(unit.id); let entry = this.entities.get(unit.id);
       if (entry && (entry.data.kind !== unit.kind || entry.data.champion !== unit.champion)) { this.removeEntity(unit.id); entry = null; }
       if (!entry) entry = this.createEntity(unit);
       const distance = Math.hypot(unit.x - entry.tx, unit.z - entry.tz);
-      entry.vx = (unit.x - entry.tx) / delta; entry.vz = (unit.z - entry.tz) / delta;
-      if (distance > 8 || entry.data.dead !== unit.dead) { entry.group.position.x = unit.x; entry.group.position.z = unit.z; entry.vx = entry.vz = 0; }
+      if (advancingMotion) { entry.vx = (unit.x - entry.tx) / delta; entry.vz = (unit.z - entry.tz) / delta; }
+      // Input acknowledgements may repeat a tick. Preserve its movement sample;
+      // a changed position on that same tick is an authoritative teleport.
+      const expectedSpeed = finite(unit.effectiveSpeed, finite(unit.speed, unit.kind === 'minion' ? 4.2 : 7));
+      const teleported = distance > Math.max(2, expectedSpeed * delta * 2.5);
+      if (state.phase === 'finished' || teleported || entry.data.dead !== unit.dead || (!advancingMotion && distance > .001) || (unit.motionRevision !== undefined && entry.data.motionRevision !== undefined && unit.motionRevision !== entry.data.motionRevision)) { entry.group.position.x = unit.x; entry.group.position.z = unit.z; entry.vx = entry.vz = 0; }
       entry.tx = unit.x; entry.tz = unit.z; entry.data = unit;
       entry.selfRing && (entry.selfRing.visible = unit.id === selfId && !unit.dead);
       entry.teamRing.visible = !unit.dead;
       entry.pick.visible = !unit.dead;
       if (unit.kind === 'tower' || unit.kind === 'nexus') { entry.model.userData.body.visible = !unit.dead; entry.model.userData.ruins.visible = Boolean(unit.dead); entry.label.sprite.visible = !unit.dead; }
-      else { entry.model.visible = !unit.dead; entry.label.sprite.visible = !unit.dead; }
+      else { entry.model.visible = !unit.dead || Boolean(entry.asset); entry.label.sprite.visible = !unit.dead; }
       if (entry.shield) entry.shield.visible = finite(unit.shield) > 0 && !unit.dead;
       entry.recall.visible = Boolean(unit.recalling) && !unit.dead;
       this.updateLabel(entry, unit);
+      if (unit.id === selfId && state.phase === 'playing') this.predictor.receive(unit, performance.now());
     }
     for (const id of [...this.entities.keys()]) if (!ids.has(id)) this.removeEntity(id);
+    if (state.phase === 'finished') this.predictor.reset();
     if (state.phase === 'playing' && previousPhase !== 'playing') {
       const own = this.entities.get(selfId);
       if (own) { this.locked = true; this.focusTarget.set(clamp(own.tx + (this.selfTeam ? -5 : 5), -28, 28), 0.7, clamp(own.tz, -3.5, 3.5)); this.focus.copy(this.focusTarget); }
@@ -439,7 +522,7 @@ export class ArenaScene {
     this.updateEffects(state.effects || []);
     for (const event of state.events || []) this.consumeEvent(event);
     if (this.seenEvents.size > 800) this.seenEvents = new Set([...this.seenEvents].slice(-400));
-    this.snapshotTime = time; this.lastSnapshot = performance.now();
+    if (advancingMotion) { this.snapshotTime = time; this.motionTick = state.tick; this.lastSnapshot = performance.now(); this.motionSampleSeen = true; }
   }
 
   updateProjectiles(list) {
@@ -497,7 +580,7 @@ export class ArenaScene {
 
   consumeEvent(event) {
     if (!event?.id || this.seenEvents.has(event.id)) return; this.seenEvents.add(event.id);
-    const actor = this.entities.get(event.actorId || event.ownerId); if (actor && /attack|cast|shoot/.test(event.type || '')) actor.swing = this.clock;
+    const actor = this.entities.get(event.actorId || event.ownerId); if (actor && /attack|cast|shoot/.test(event.type || '')) { actor.swing = this.clock; actor.asset?.play(event.type === 'cast' && event.slot ? event.slot : 'attack', { once: true, restart: true }); }
     if (Number.isFinite(event.value) && event.value !== 0 && Number.isFinite(event.x) && Number.isFinite(event.z)) {
       const canvas = document.createElement('canvas'); canvas.width = 160; canvas.height = 72; const ctx = canvas.getContext('2d');
       const heal = /heal/.test(event.type || ''); ctx.font = 'bold 38px system-ui'; ctx.textAlign = 'center'; ctx.lineWidth = 7; ctx.strokeStyle = '#18232c'; const value = `${heal ? '+' : ''}${Math.round(Math.abs(event.value))}`; ctx.strokeText(value, 80, 49); ctx.fillStyle = heal ? '#a0efa5' : '#f8dfac'; ctx.fillText(value, 80, 49);
@@ -524,6 +607,15 @@ export class ArenaScene {
   }
 
   setCameraLock(locked) { this.locked = Boolean(locked); }
+
+  noteInput(action, sequence, now = performance.now()) { this.predictor.input(action, sequence, now); }
+  rejectInput(sequence) { this.predictor.reject(sequence); }
+  setLatency(roundTripMs) { this.predictor.setLatency(roundTripMs); }
+
+  setQuality(mode) {
+    const ratio = this.frameBudget.setQuality(mode); this.renderer?.setPixelRatio(ratio); this.resize();
+    return this.performance;
+  }
 
   resize() {
     if (!this.renderer) return;
@@ -552,6 +644,7 @@ export class ArenaScene {
 
   render(dt = 0.016) {
     if (!this.available || this.disposed) return;
+    const renderStarted = performance.now();
     dt = clamp(finite(dt, 0.016), 0, 0.1); this.clock += dt;
     const playing = this.state && ['playing', 'finished'].includes(this.state.phase);
     const half = playing ? this.zoom : 11.6; if (half !== this.lastOrthoHalf) this.resize();
@@ -562,16 +655,23 @@ export class ArenaScene {
     this.camera.position.set(this.focus.x, 30 + (this.zoom - 18) * 0.5, this.focus.z + 24); this.camera.lookAt(this.focus);
     if (this.waterTexture) { this.waterTexture.offset.x = this.clock * 0.008; this.waterTexture.offset.y = this.clock * 0.004; }
     if (this.dust) { this.dust.position.y = Math.sin(this.clock * 0.2) * 0.4; this.dust.rotation.y = Math.sin(this.clock * 0.025) * 0.015; }
-    if (!playing && this.previewModel) { const body = this.previewModel.userData.body; body.position.y = Math.sin(this.clock * 1.8) * 0.025; this.previewModel.rotation.y = -0.24 + Math.sin(this.clock * 0.22) * 0.08; this.previewCircle.rotation.z = this.clock * 0.035; }
+    if (!playing && this.previewModel) { if (this.previewAsset) this.previewAsset.update(dt); else { const body = this.previewModel.userData.body; body.position.y = Math.sin(this.clock * 1.8) * 0.025; } this.previewModel.rotation.y = -0.24 + Math.sin(this.clock * 0.22) * 0.08; this.previewCircle.rotation.z = this.clock * 0.035; }
     const prediction = Math.min(0.08, Math.max(0, (performance.now() - this.lastSnapshot) / 1000));
+    const predictedSelf = this.state?.phase === 'playing' && self ? this.predictor.step(dt, renderStarted) : null;
     for (const entry of this.entities.values()) {
       const unit = entry.data, alpha = 1 - Math.exp(-dt * 18), x = entry.tx + entry.vx * prediction, z = entry.tz + entry.vz * prediction;
-      entry.group.position.x += (x - entry.group.position.x) * alpha; entry.group.position.z += (z - entry.group.position.z) * alpha;
+      if (unit.id === this.selfId && predictedSelf) { entry.group.position.x = predictedSelf.x; entry.group.position.z = predictedSelf.z; }
+      else { entry.group.position.x += (x - entry.group.position.x) * alpha; entry.group.position.z += (z - entry.group.position.z) * alpha; }
       const speed = Math.hypot(entry.group.position.x - entry.px, entry.group.position.z - entry.pz) / Math.max(0.001, dt); entry.px = entry.group.position.x; entry.pz = entry.group.position.z;
-      const facing = Number.isFinite(unit.facing) ? unit.facing : Math.atan2(entry.vx, entry.vz);
+      const facing = unit.id === this.selfId && Number.isFinite(predictedSelf?.facing) ? predictedSelf.facing : Number.isFinite(unit.facing) ? unit.facing : Math.atan2(entry.vx, entry.vz);
       entry.angle = angleLerp(entry.angle, facing, 1 - Math.exp(-dt * 14));
       if (unit.kind === 'hero' || unit.kind === 'minion') {
         entry.model.rotation.y = entry.angle;
+        if (entry.asset) {
+          if (Boolean(unit.dead) !== entry.assetWasDead) { entry.asset.play(unit.dead ? 'death' : 'idle', { force: true }); entry.assetWasDead = Boolean(unit.dead); }
+          if (!unit.dead) entry.asset.play(speed > .3 ? 'run' : 'idle');
+          entry.asset.update(dt); continue;
+        }
         const walk = clamp(speed / 5, 0, 1), phase = this.clock * (unit.kind === 'minion' ? 10 : 9) + entry.phase, limbs = entry.model.userData.limbs;
         entry.model.userData.body.position.y = Math.sin(phase * 2) * 0.035 * walk;
         if (limbs.leftLeg) { limbs.leftLeg.rotation.x = Math.sin(phase) * 0.55 * walk; limbs.rightLeg.rotation.x = -Math.sin(phase) * 0.55 * walk; }
@@ -595,6 +695,8 @@ export class ArenaScene {
     this.aimGroup.visible = Boolean(this.aim && playing && self && !self.data.dead);
     if (this.aimGroup.visible) { const a = this.aim, sx = self.group.position.x, sz = self.group.position.z, range = Math.max(0.1, finite(a.range, 6)), dx = finite(a.x, sx) - sx, dz = finite(a.z, sz) - sz, length = Math.hypot(dx, dz), distance = Math.min(range, length); this.aimGroup.position.set(sx, 0.91, sz); this.aimCircle.scale.setScalar(range); this.aimLine.scale.x = distance; this.aimLine.position.set(dx * Math.min(1, range / (length || 1)) / 2, 0.06, dz * Math.min(1, range / (length || 1)) / 2); this.aimLine.rotation.y = -Math.atan2(dz, dx); this.aimTarget.position.set(dx * Math.min(1, range / (length || 1)), 0.07, dz * Math.min(1, range / (length || 1))); }
     this.renderer.render(this.scene, this.camera);
+    const nextRatio = this.frameBudget.sample(renderStarted, performance.now() - renderStarted, this.renderer.info.render, document.visibilityState !== 'hidden');
+    if (nextRatio !== null) { this.renderer.setPixelRatio(nextRatio); this.resize(); }
   }
 
   dispose() {
@@ -607,6 +709,8 @@ export class ArenaScene {
     for (const f of this.floaters) { f.texture.dispose(); f.material.dispose(); }
     for (const material of this.materials.values()) material.dispose(); for (const geometry of this.geometries.values()) geometry.dispose(); for (const texture of this.textures) texture.dispose();
     for (const geometry of this.mergedGeometries || []) geometry.dispose();
+    for (const geometry of this.actorBatchGeometries.values()) geometry.dispose();
+    this.previewAsset?.dispose();
     this.waterMaterial?.dispose(); this.dustGeometry?.dispose(); this.dust?.material.dispose(); this.renderer?.dispose();
   }
 }

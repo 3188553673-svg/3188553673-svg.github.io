@@ -10,7 +10,7 @@ import { CHAMPIONS } from './shared/definitions.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PAGES_ORIGIN = 'https://3188553673-svg.github.io';
-const PUBLIC = new Set(['index.html', 'app.js', 'style.css', 'scene.js', 'network.js', 'ui-art.js', 'connection.json', 'shared/definitions.js']);
+const PUBLIC = new Set(['index.html', 'app.js', 'style.css', 'scene.js', 'scene-performance.js', 'hero-assets.js', 'network.js', 'client-movement.js', 'ui-art.js', 'connection.json', 'shared/definitions.js']);
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.txt': 'text/plain; charset=utf-8', '.ico': 'image/x-icon' };
 
 function publicOrigin(req) {
@@ -32,7 +32,7 @@ function playerName(value) {
 export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30, maxClients = 80 } = {}) {
   const rooms = new Map();
   const clients = new Set();
-  let timer = null, previousTime = 0, frames = 0, shuttingDown = false;
+  let timer = null, previousTime = 0, accumulator = 0, shuttingDown = false;
 
   const server = http.createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -77,7 +77,7 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
     } catch { res.writeHead(404); res.end('没有找到这个文件'); }
   });
 
-  const error = (client, code, message) => client.ws.send({ type: 'error', code, message });
+  const error = (client, code, message, seq) => client.ws.send({ type: 'error', code, message, ...(Number.isSafeInteger(seq) ? { seq } : {}) });
   function publish(room) {
     for (const client of clients) {
       if (client.room === room) client.ws.send({ type: 'state', state: snapshot(room, client.id) });
@@ -135,10 +135,13 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
       if (message.type === 'ping') return client.ws.send({ type: 'pong', at: Number.isFinite(message.at) ? message.at : now });
       if (message.type === 'leave') { leave(client); client.ws.send({ type: 'left' }); return; }
       if (!client.room) return error(client, 'ROOM', '请先加入房间');
-      applyAction(client.room, client.id, message);
-      publish(client.room);
+      const outcome = applyAction(client.room, client.id, message);
+      if (Number.isSafeInteger(message.seq)) client.ws.send({ type: 'input_ack', seq: message.seq, ...(outcome?.duplicate ? { duplicate: true } : { accepted: true }) });
+      // Simulation snapshots have a single cadence. Lobby changes remain immediate.
+      if (client.room.phase !== 'playing') publish(client.room);
     } catch (e) {
-      error(client, e.code || 'ACTION', e.message || '操作未完成');
+      if (Number.isSafeInteger(message.seq)) client.ws.send({ type: 'input_ack', seq: message.seq, accepted: false });
+      error(client, e.code || 'ACTION', e.message || '操作未完成', message.seq);
     }
   }
 
@@ -159,12 +162,17 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
 
   function tick() {
     const now = performance.now();
-    const dt = Math.max(0, Math.min(0.1, (now - previousTime) / 1000));
-    previousTime = now; frames++;
+    accumulator += Math.max(0, (now - previousTime) / 1000);
+    previousTime = now;
+    const steps = Math.min(5, Math.floor((accumulator + 1e-6) / .05));
+    accumulator -= steps * .05;
+    // A long OS pause cannot trigger an unbounded catch-up loop. Ordinary jitter
+    // is retained instead of silently deleting simulation time above 100 ms.
+    accumulator = Math.min(accumulator, .25);
     for (const room of rooms.values()) {
       try {
-        step(room, dt);
-        if (frames % 2 === 0) publish(room);
+        for (let i = 0; i < steps; i++) step(room, .05);
+        if (steps > 0) publish(room);
       } catch (e) {
         console.error('Room simulation failed:', e.message);
         for (const client of [...clients]) if (client.room === room) client.ws.close(1011, '对局发生错误，请重新建房');

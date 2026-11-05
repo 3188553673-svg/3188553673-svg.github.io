@@ -46,7 +46,7 @@ function makeHero(player) {
     inventory: [], cooldowns: { q: 0, w: 0, e: 0, r: 0, d: 0, f: 0 }, dead: false, respawnIn: 0,
     shield: 0, stunned: 0, recalling: 0, kills: 0, deaths: 0, cs: 0,
     _order: { type: 'stop' }, _attackTimer: 0, _buffs: {}, _lastDamaged: -999, _revealUntil: 0, _shieldTime: 0,
-    _botAt: 0, _spinAt: 0, _lastHeroSource: null, _lastHeroDamage: -999, _radius: .8, attackAnim: 0 };
+    _botAt: 0, _spinAt: 0, _lastHeroSource: null, _lastHeroDamage: -999, _radius: .8, _motionRevision: 0, attackAnim: 0 };
   return h;
 }
 function resetBattle(room) {
@@ -67,7 +67,7 @@ function finish(room, winnerTeam, text) {
 export function createRoom(code, host) {
   if (!host || typeof host.id !== 'string' || !host.id) error('PLAYER', '玩家信息无效');
   const room = { code: String(code), room: String(code), hostId: host.id, phase: 'lobby', players: [], time: 0, tick: 0, winnerTeam: null,
-    heroes: [], minions: [], structures: [], projectiles: [], effects: [], events: [], round: 0, _sequence: 0, _entity: 0, _zones: [], _reveals: [0, 0], _nextWave: 2 };
+    heroes: [], minions: [], structures: [], projectiles: [], effects: [], events: [], round: 0, _sequence: 0, _entity: 0, _inputSequences: new Map(), _zones: [], _reveals: [0, 0], _nextWave: 2 };
   addPlayer(room, host); return room;
 }
 export function addPlayer(room, data) {
@@ -84,6 +84,7 @@ export function addPlayer(room, data) {
 export function removePlayer(room, playerId) {
   const i = room.players.findIndex(p => p.id === playerId); if (i < 0) return false;
   const [p] = room.players.splice(i, 1);
+  room._inputSequences.delete(playerId);
   if (room.phase === 'playing') finish(room, 1 - p.team, '对手离开了对局');
   if (room.hostId === playerId) room.hostId = room.players.find(p => !p.isBot)?.id || room.players[0]?.id || null;
   return true;
@@ -250,7 +251,7 @@ function cast(room, hero, action) {
     }
   } else if (hero.champion === 'yi') {
     if (slot === 'q') {
-      const from = copyPoint(hero); hero.x = clamp(target.x + (hero.team === 0 ? -1.4 : 1.4), MAP.minX + 1, MAP.maxX - 1); hero.z = clamp(target.z, MAP.minZ + .7, MAP.maxZ - .7);
+      const from = copyPoint(hero); hero.x = clamp(target.x + (hero.team === 0 ? -1.4 : 1.4), MAP.minX + 1, MAP.maxX - 1); hero.z = clamp(target.z, MAP.minZ + .7, MAP.maxZ - .7); hero._motionRevision++;
       b.untargetable = .35; hero._order = { type: 'attack', targetId: target.id };
       effect(room, 'dash', from.x, from.z, hero.team, 1.2, .45, { toX: hero.x, toZ: hero.z }); damage(room, target, 115 + hero.ad * .8, hero);
     }
@@ -259,7 +260,19 @@ function cast(room, hero, action) {
     if (slot === 'r') { b.highlander = 8; b.slow = 0; effect(room, 'haste', hero.x, hero.z, hero.team, 2, 8, { ownerId: hero.id }); }
   }
 }
+// Sequence acknowledgements describe processed commands, including rejected ones.
+// They never trust a browser position or elapsed time; movement stays server-owned.
 export function applyAction(room, playerId, action) {
+  if (!room.players.some(p => p.id === playerId)) error('PLAYER', '你已不在这个房间');
+  const sequenced = action && typeof action === 'object' && Object.hasOwn(action, 'seq');
+  if (sequenced) {
+    if (!Number.isSafeInteger(action.seq) || action.seq < 1 || action.seq > 0x7fffffff) error('SEQUENCE', '操作序号无效');
+    if (action.seq <= (room._inputSequences.get(playerId) || 0)) return { duplicate: true };
+  }
+  try { return applyGameAction(room, playerId, action); }
+  finally { if (sequenced) room._inputSequences.set(playerId, action.seq); }
+}
+function applyGameAction(room, playerId, action) {
   const p = room.players.find(p => p.id === playerId); if (!p) error('PLAYER', '你已不在这个房间');
   if (!action || typeof action !== 'object' || Array.isArray(action)) error('ACTION', '操作无效');
   if (['select', 'ready', 'bot', 'start'].includes(action.type)) {
@@ -302,7 +315,7 @@ export function applyAction(room, playerId, action) {
     const aim = slot === 'd' ? point(action) : null; cancelChannel(hero); hero.cooldowns[slot] = SUMMONERS[slot].cooldown;
     if (slot === 'd') {
       if (hero._buffs.root > 0) { hero.cooldowns[slot] = 0; error('ROOTED', '禁锢中不能闪现'); }
-      const before = copyPoint(hero), dir = aimDirection(hero, aim), n = Math.min(9, distance(hero, aim)); hero.x = clamp(hero.x + dir.x * n, MAP.minX + 1, MAP.maxX - 1); hero.z = clamp(hero.z + dir.z * n, MAP.minZ + .7, MAP.maxZ - .7); hero._order = { type: 'stop' };
+      const before = copyPoint(hero), dir = aimDirection(hero, aim), n = Math.min(9, distance(hero, aim)); hero.x = clamp(hero.x + dir.x * n, MAP.minX + 1, MAP.maxX - 1); hero.z = clamp(hero.z + dir.z * n, MAP.minZ + .7, MAP.maxZ - .7); hero._order = { type: 'stop' }; hero._motionRevision++;
       effect(room, 'flash', before.x, before.z, hero.team, 2, .55, { toX: hero.x, toZ: hero.z });
     } else { heal(room, hero, 220 + hero.level * 30); hero._buffs.haste = 2; effect(room, 'heal', hero.x, hero.z, hero.team, 2.5, 1, { ownerId: hero.id }); }
     return;
@@ -410,7 +423,7 @@ function heroStep(room, h, dt) {
   h.gold += dt * 2.2;
   if (h.dead) {
     h.respawnIn = Math.max(0, h.respawnIn - dt);
-    if (h.respawnIn <= 0) { h.dead = false; h.x = MAP.spawns[h.team].x + (h.team === 0 ? 2.5 : -2.5); h.z = 0; h.hp = h.maxHp; h.mana = h.maxMana; h._lastDamaged = room.time; h._order = { type: 'stop' }; event(room, 'respawn', { actorId: h.id, team: h.team, text: `${h.name} 已复活` }); }
+    if (h.respawnIn <= 0) { h.dead = false; h.x = MAP.spawns[h.team].x + (h.team === 0 ? 2.5 : -2.5); h.z = 0; h.hp = h.maxHp; h.mana = h.maxMana; h._lastDamaged = room.time; h._order = { type: 'stop' }; h._motionRevision++; event(room, 'respawn', { actorId: h.id, team: h.team, text: `${h.name} 已复活` }); }
     return;
   }
   const inFountain = distance(h, MAP.spawns[h.team]) < 7;
@@ -419,7 +432,7 @@ function heroStep(room, h, dt) {
   if (h._buffs.meditate > 0 && h.stunned <= 0) { h.hp = Math.min(h.maxHp, h.hp + h.maxHp * .08 * dt); return; }
   if (h.recalling > 0) {
     h.recalling = Math.max(0, h.recalling - dt);
-    if (h.recalling <= 0) { h.x = MAP.spawns[h.team].x + (h.team === 0 ? 2.5 : -2.5); h.z = 0; effect(room, 'flash', h.x, h.z, h.team, 2, .7); }
+    if (h.recalling <= 0) { h.x = MAP.spawns[h.team].x + (h.team === 0 ? 2.5 : -2.5); h.z = 0; h._motionRevision++; effect(room, 'flash', h.x, h.z, h.team, 2, .7); }
     return;
   }
   if (h.stunned > 0) return;
@@ -509,18 +522,25 @@ export function step(room, elapsed = .05) {
   room.effects = room.effects.filter(e => e.ttl > 0); room.projectiles = room.projectiles.filter(p => p.ttl > 0); room._zones = room._zones.filter(z => z.ttl > 0);
   room.minions = room.minions.filter(m => (!m.dead || room.time - m._deathAt < .6) && room.time - m._bornAt < 240);
 }
-function heroSnapshot(h) {
+function heroSnapshot(h, room, viewerId) {
   return { id: h.id, kind: h.kind, name: h.name, team: h.team, champion: h.champion, x: round(h.x), z: round(h.z), facing: round(h.facing), hp: round(h.hp), maxHp: h.maxHp, mana: round(h.mana), maxMana: h.maxMana,
     level: h.level, xp: h.xp, nextXp: h.nextXp, gold: Math.floor(h.gold), ad: round(h.ad), ap: round(h.ap), armor: round(h.armor), speed: round(h.speed), attackRange: h.attackRange, attackInterval: round(h.attackInterval),
     inventory: [...h.inventory], cooldowns: Object.fromEntries(Object.entries(h.cooldowns).map(([k, v]) => [k, round(v)])), dead: h.dead, respawnIn: round(h.respawnIn), shield: round(h.shield), stunned: round(h.stunned), recalling: round(h.recalling),
     kills: h.kills, deaths: h.deaths, cs: h.cs, attackAnim: round(h.attackAnim), rooted: h._buffs.root > 0, slowed: h._buffs.slow > 0, silenced: h._buffs.silence > 0,
-    buffs: Object.fromEntries(Object.entries(h._buffs).filter(([, v]) => v > 0).map(([k, v]) => [k, round(v)])) };
+    buffs: Object.fromEntries(Object.entries(h._buffs).filter(([, v]) => v > 0).map(([k, v]) => [k, round(v)])),
+    ...(h.id === viewerId ? {
+      lastInputSeq: room._inputSequences.get(h.id) || 0,
+      motionTick: room.tick,
+      motionRevision: h._motionRevision,
+      effectiveSpeed: round(movementSpeed(h)),
+      moveTarget: h._order.type === 'move' ? { x: h._order.x, z: h._order.z } : null
+    } : {}) };
 }
 export function snapshot(room, viewerId) {
   const viewer = room.players.find(p => p.id === viewerId), team = viewer?.team;
   const canSee = u => team !== undefined && visible(room, team, u);
   return { room: room.code, phase: room.phase, hostId: room.hostId, players: room.players.map(p => ({ ...p })), time: round(room.time), tick: room.tick, winnerTeam: room.winnerTeam,
-    heroes: room.heroes.filter(h => canSee(h)).map(heroSnapshot),
+    heroes: room.heroes.filter(h => canSee(h)).map(h => heroSnapshot(h, room, viewerId)),
     minions: room.minions.map(m => ({ id: m.id, kind: m.kind, team: m.team, minionType: m.minionType, x: round(m.x), z: round(m.z), facing: round(m.facing), hp: round(m.hp), maxHp: round(m.maxHp), dead: m.dead, attackAnim: round(m.attackAnim) })),
     structures: room.structures.map(t => ({ id: t.id, kind: t.kind, team: t.team, x: t.x, z: t.z, hp: round(t.hp), maxHp: t.maxHp, dead: t.dead, invulnerable: t.invulnerable })),
     projectiles: room.projectiles.map(p => ({ id: p.id, kind: p.kind, team: p.team, ownerId: p.ownerId, x: round(p.x), z: round(p.z), dx: round(p.dx), dz: round(p.dz), radius: p.radius })),
