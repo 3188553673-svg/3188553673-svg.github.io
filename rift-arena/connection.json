@@ -1,1 +1,4 @@
-{"mode":"relay","serverUrl":""}
+{
+  "mode": "relay",
+  "serverUrl": "https://rift-arena-duel-3188553673.onrender.com"
+}
