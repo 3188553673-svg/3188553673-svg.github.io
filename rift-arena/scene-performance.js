@@ -9,8 +9,8 @@ export class FrameBudget {
     this.metrics = { quality: 'auto', pixelRatio: this.ratio, frameP50Ms: 0, frameP95Ms: 0, frameMaxMs: 0, renderP95Ms: 0, sampleCount: 0, calls: 0, triangles: 0 };
   }
   setQuality(mode) {
-    if (!['auto', 'high'].includes(mode)) throw new Error('Unknown graphics quality');
-    this.mode = mode; this.ratio = Math.min(this.nativeRatio, mode === 'high' ? 2 : 1.7);
+    if (!['auto', 'smooth', 'high'].includes(mode)) throw new Error('Unknown graphics quality');
+    this.mode = mode; this.ratio = Math.min(this.nativeRatio, mode === 'smooth' ? .85 : mode === 'high' ? 2 : 1.7);
     this.slowWindows = this.fastWindows = 0;
     Object.assign(this.metrics, { quality: mode, pixelRatio: this.ratio }); return this.ratio;
   }
@@ -27,9 +27,9 @@ export class FrameBudget {
     Object.assign(this.metrics, { frameP50Ms: percentile(frames, .5), frameP95Ms: percentile(frames, .95), frameMaxMs: frames[frames.length - 1], renderP95Ms: percentile(cpu, .95), sampleCount: frames.length, calls: info?.calls || 0, triangles: info?.triangles || 0 });
     const previous = this.ratio;
     if (this.mode === 'auto') {
-      this.slowWindows = this.metrics.frameP95Ms > 25 && this.metrics.frameP50Ms > 20 ? this.slowWindows + 1 : 0;
+      this.slowWindows = this.metrics.frameP95Ms > 26 && (this.metrics.frameP50Ms > 18 || this.metrics.renderP95Ms > 12) ? this.slowWindows + 1 : 0;
       this.fastWindows = this.metrics.frameP95Ms < 17 && this.metrics.frameP50Ms < 15 ? this.fastWindows + 1 : 0;
-      if (this.slowWindows >= 2) { this.ratio = Math.max(1, Math.round((this.ratio - .2) * 100) / 100); this.slowWindows = this.fastWindows = 0; }
+      if (this.slowWindows >= 2) { this.ratio = Math.max(.85, Math.round((this.ratio - .2) * 100) / 100); this.slowWindows = this.fastWindows = 0; }
       else if (this.fastWindows >= 5) { this.ratio = Math.min(this.nativeRatio, 1.7, Math.round((this.ratio + .1) * 100) / 100); this.fastWindows = 0; }
     }
     this.metrics.pixelRatio = this.ratio;

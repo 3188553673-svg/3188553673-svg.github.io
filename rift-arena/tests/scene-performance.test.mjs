@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import * as THREE from '../vendor/three.module.js';
 import { ArenaScene } from '../scene.js';
 import { FrameBudget } from '../scene-performance.js';
-import { MovementPredictor } from '../client-movement.js';
+import { MovementPredictor, SnapshotPlayback } from '../client-movement.js';
 
 const context = new Proxy({}, { get: (o, k) => o[k] ?? (() => {}), set: (o, k, v) => (o[k] = v, true) });
 globalThis.document = { createElement: () => ({ width: 256, height: 256, getContext: () => context }) };
@@ -12,7 +12,7 @@ function cpuScene(Prototype = ArenaScene.prototype) {
   return Object.assign(Object.create(Prototype), {
     available: true, disposed: false, selfId: 'self', selfTeam: 0, state: null, entities: new Map(), pickTargets: [], materials: new Map(), geometries: new Map(), textures: new Set(), actorBatchGeometries: new Map(), assetStatus: {},
     actors: new THREE.Group(), preview: new THREE.Group(), fxLayer: new THREE.Group(), projectiles: new Map(), effects: new Map(), localEffects: [], floaters: [], seenEvents: new Set(),
-    snapshotTime: 0, lastSnapshot: 0, motionSampleSeen: false, motionTick: -1, focus: new THREE.Vector3(), focusTarget: new THREE.Vector3(), predictor: new MovementPredictor(), raycaster: new THREE.Raycaster(),
+    motionPlayback: new SnapshotPlayback(), focus: new THREE.Vector3(), focusTarget: new THREE.Vector3(), predictor: new MovementPredictor(), raycaster: new THREE.Raycaster(),
   });
 }
 const unit = x => ({ id: 'remote', kind: 'hero', team: 1, champion: 'garen', name: 'remote', x, z: 0, hp: 500, maxHp: 500, mana: 0, maxMana: 0, level: 1, dead: false });
@@ -21,11 +21,11 @@ const state = (time, x) => ({ phase: 'playing', time, tick: Math.round(time * 20
 test('same-tick acknowledgement preserves remote velocity and extrapolation epoch; same-tick teleport snaps', () => {
   const scene = cpuScene();
   scene.setState(state(.1, 0), 'self'); scene.setState(state(.2, .66), 'self');
-  const entry = scene.entities.get('remote'), sampledAt = scene.lastSnapshot;
+  const entry = scene.entities.get('remote'), sampledAt = scene.motionPlayback.arrivedAt;
   assert.ok(Math.abs(entry.vx - 6.6) < .000001);
   scene.setState(state(.2, .66), 'self');
   assert.ok(Math.abs(entry.vx - 6.6) < .000001, 'an acknowledgement must not zero walking velocity');
-  assert.equal(scene.lastSnapshot, sampledAt, 'an acknowledgement must not rewind extrapolation time');
+  assert.equal(scene.motionPlayback.arrivedAt, sampledAt, 'an acknowledgement must not rewind playback time');
   scene.setState(state(.2, 6), 'self');
   assert.equal(entry.vx, 0); assert.equal(entry.group.position.x, 6);
 });

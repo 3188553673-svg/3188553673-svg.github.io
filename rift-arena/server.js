@@ -11,6 +11,8 @@ import { CHAMPIONS } from './shared/definitions.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PAGES_ORIGIN = 'https://3188553673-svg.github.io';
+const SNAPSHOT_WINDOW = 2;
+const SNAPSHOT_ACK_TIMEOUT_MS = 20000;
 const PUBLIC = new Set(['index.html', 'app.js', 'style.css', 'scene.js', 'scene-performance.js', 'arena-environment.js', 'original-heroes.js', 'hero-assets.js', 'network.js', 'client-movement.js', 'ui-art.js', 'connection.json', 'shared/definitions.js']);
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp', '.jpg': 'image/jpeg', '.txt': 'text/plain; charset=utf-8', '.ico': 'image/x-icon' };
 
@@ -79,23 +81,43 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
   });
 
   const error = (client, code, message, seq) => client.ws.send({ type: 'error', code, message, ...(Number.isSafeInteger(seq) ? { seq } : {}) });
-  function publish(room) {
-    for (const client of clients) {
-      if (client.room !== room) continue;
-      const state = snapshot(room, client.id);
-      if (client.snapshotEncoding === 'deflate') {
-        const data = deflateSync(JSON.stringify(state), { level: 1 }).toString('base64');
-        client.ws.send({ type: 'state', encoding: 'deflate', data });
-      } else {
-        client.ws.send({ type: 'state', state });
-      }
+  function publishState(client) {
+    const room = client.room;
+    if (!room) return;
+    const flow = client.snapshotFlow;
+    // An intermediary can accept writes before the browser consumes them.
+    // Wait for browser credit and sample the latest room state when it arrives.
+    if (flow && client.stateSeq - flow.acknowledged >= SNAPSHOT_WINDOW) {
+      flow.pending = true;
+      return;
     }
+    const state = snapshot(room, client.id);
+    const message = client.snapshotEncoding === 'deflate'
+      ? { type: 'state', encoding: 'deflate', data: deflateSync(JSON.stringify(state), { level: 1 }).toString('base64') }
+      : { type: 'state', state };
+    if (flow) {
+      if (flow.acknowledged === client.stateSeq) flow.lastProgress = performance.now();
+      flow.pending = false;
+      message.stateSeq = ++client.stateSeq;
+    }
+    client.ws.send(message);
+  }
+  function publish(room) {
+    for (const client of clients) if (client.room === room) publishState(client);
+  }
+  function acknowledgeState(client, stateSeq) {
+    const flow = client.snapshotFlow;
+    if (!flow || !Number.isSafeInteger(stateSeq) || stateSeq <= flow.acknowledged || stateSeq > client.stateSeq) return;
+    flow.acknowledged = stateSeq;
+    flow.lastProgress = performance.now();
+    if (flow.pending) publishState(client);
   }
   function leave(client) {
     const room = client.room;
     if (!room) return;
     client.room = null;
     client.snapshotEncoding = null;
+    client.snapshotFlow = null;
     removePlayer(room, client.id);
     if (!room.players.some(p => !p.isBot)) rooms.delete(room.code);
     else publish(room);
@@ -128,7 +150,12 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
       } catch (e) { leave(client); throw e; }
     }
     client.snapshotEncoding = message.snapshotEncoding === 'deflate' ? 'deflate' : null;
-    client.ws.send({ type: 'welcome', id: client.id, room: room.code, ...(client.snapshotEncoding ? { snapshotEncoding: client.snapshotEncoding } : {}) });
+    client.snapshotFlow = message.snapshotFlow === 'ack'
+      ? { acknowledged: client.stateSeq, lastProgress: 0, pending: false }
+      : null;
+    client.ws.send({ type: 'welcome', id: client.id, room: room.code,
+      ...(client.snapshotEncoding ? { snapshotEncoding: client.snapshotEncoding } : {}),
+      ...(client.snapshotFlow ? { snapshotFlow: 'ack' } : {}) });
     publish(room);
   }
   function onMessage(client, text) {
@@ -143,6 +170,7 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
     try {
       if (message.type === 'join') return join(client, message);
       if (message.type === 'ping') return client.ws.send({ type: 'pong', at: Number.isFinite(message.at) ? message.at : now });
+      if (message.type === 'state_ack') return acknowledgeState(client, message.stateSeq);
       if (message.type === 'leave') { leave(client); client.ws.send({ type: 'left' }); return; }
       if (!client.room) return error(client, 'ROOM', '请先加入房间');
       const outcome = applyAction(client.room, client.id, message);
@@ -164,7 +192,7 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
     if (shuttingDown || clients.size >= maxClients) { socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n'); return; }
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-    const client = { id: randomUUID().slice(0, 12), room: null, ws: null, snapshotEncoding: null, lastSeen: Date.now(), rateAt: Date.now(), rateCount: 0 };
+    const client = { id: randomUUID().slice(0, 12), room: null, ws: null, snapshotEncoding: null, snapshotFlow: null, stateSeq: 0, lastSeen: Date.now(), rateAt: Date.now(), rateCount: 0 };
     client.ws = websocket(socket, text => onMessage(client, text), () => { leave(client); clients.delete(client); });
     clients.add(client);
     if (head.length) client.ws.feed(head);
@@ -191,7 +219,14 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
       }
     }
     const dateNow = Date.now();
-    for (const client of clients) if (dateNow - client.lastSeen > 90000) client.ws.close(1001, '连接超时，请重新加入');
+    for (const client of clients) {
+      const flow = client.snapshotFlow;
+      if (flow && flow.acknowledged < client.stateSeq && now - flow.lastProgress > SNAPSHOT_ACK_TIMEOUT_MS) {
+        client.ws.close(1013, '同步超时，请重新加入');
+      } else if (dateNow - client.lastSeen > 90000) {
+        client.ws.close(1001, '连接超时，请重新加入');
+      }
+    }
   }
   return {
     server, rooms, clients, address: () => server.address(),

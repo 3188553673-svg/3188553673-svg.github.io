@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MovementPredictor } from '../client-movement.js';
+import { MovementPredictor, SnapshotPlayback, remotePosition } from '../client-movement.js';
 
 const hero = extra => ({ id:'a', champion:'garen', x:0, z:0, facing:0, hp:880, dead:false, stunned:0, rooted:false, recalling:0, buffs:{}, speed:7, effectiveSpeed:7, lastInputSeq:0, motionRevision:0, moveTarget:null, ...extra });
 const close = (a,b) => assert.ok(Math.abs(a-b)<1e-6, `${a} != ${b}`);
@@ -47,8 +47,8 @@ test('a motion revision makes even a short server teleport immediate', () => {
 
 test('prediction does not run forever through a network stall or overshoot its destination', () => {
   const p=new MovementPredictor();p.receive(hero(),0);p.input({type:'move',x:.1,z:0},1,0);close(p.step(.05,50).x,.1);
-  p.input({type:'move',x:1000,z:1000},2,50);p.step(.05,100);const before=p.step(.05,300);
-  const stalled=p.step(.05,351);close(stalled.x,before.x);close(stalled.z,before.z);assert.equal(stalled.predicted,false);
+  p.input({type:'move',x:1000,z:1000},2,50);p.step(.05,100);const before=p.step(.05,550);
+  const stalled=p.step(.05,551);close(stalled.x,before.x);close(stalled.z,before.z);assert.equal(stalled.predicted,false);
   assert.ok(stalled.x<40&&stalled.z<8);
 });
 
@@ -98,4 +98,61 @@ test('a move sent after flash survives the older flash acknowledgement',()=>{
   const p=new MovementPredictor();p.receive(hero(),0);p.input({type:'summoner',slot:'d'},1,0);p.input({type:'move',x:10,z:0},2,10);
   p.receive(hero({x:1,motionRevision:1,lastInputSeq:1}),60);
   assert.equal(p.pending.length,1);const next=p.step(.05,110);assert.equal(next.predicted,true);assert.ok(next.x>1);
+});
+
+test('a moving local hero keeps a bounded forward pace through a 450 ms snapshot gap', () => {
+  const predictor = new MovementPredictor();
+  const target = { x: 20, z: 0 };
+  const moving = hero({ moveTarget: target, lastInputSeq: 1, motionTick: 0 });
+  predictor.receive(moving, 0);
+  let previous = 0;
+  for (let frame = 1; frame <= 48; frame++) {
+    const at = frame * 1000 / 60;
+    if (frame === 3 || (frame >= 30 && frame % 3 === 0)) {
+      if (frame === 30) predictor.setLatency(2200);
+      predictor.receive({ ...moving, x: 7 * at / 1000, motionTick: frame / 3 }, at);
+    }
+    const { x } = predictor.step(1 / 60, at);
+    const distance = x - previous;
+    assert.ok(distance >= 7 * .55 / 60 - 1e-6, `forward movement stalled on frame ${frame}`);
+    assert.ok(distance <= 7 * 1.45 / 60 + 1e-6, `reconciliation jumped on frame ${frame}`);
+    previous = x;
+  }
+});
+
+test('the first ordinary position after a long outage reconciles without teleporting', () => {
+  const predictor = new MovementPredictor();
+  const moving = hero({ moveTarget: { x: 30, z: 0 }, lastInputSeq: 1, motionTick: 0 });
+  predictor.receive(moving, 0);
+  for (let frame = 1; frame <= 90; frame++) predictor.step(1 / 60, frame * 1000 / 60);
+  const before = predictor.position.x;
+  predictor.receive({ ...moving, x: 10.5, motionTick: 30 }, 1500);
+  close(predictor.position.x, before);
+  assert.ok(predictor.step(1 / 60, 1517).x - before <= 7 * 1.45 / 60 + 1e-6);
+});
+
+test('remote playback bridges burst delivery and caps guessing after a long outage', () => {
+  const clock = new SnapshotPlayback();
+  const samples = [{ time: 0, x: 0, z: 0 }];
+  clock.record(0, 0);
+  let previous = 0;
+  let latest = 0;
+  for (let frame = 1; frame <= 180; frame++) {
+    const at = frame * 1000 / 60;
+    if (frame % 12 === 0 && frame <= 120) {
+      // A 20 Hz server sends four samples that arrive together every 200 ms.
+      for (let index = 0; index < 4; index++) {
+        latest += .05;
+        samples.push({ time: latest, x: latest * 7, z: 0 });
+        clock.record(latest, at);
+      }
+    }
+    const time = clock.advance(1 / 60, at);
+    const { x } = remotePosition(samples, time, 7, 0);
+    assert.ok(x >= previous - 1e-6, `remote movement stepped backward on frame ${frame}`);
+    if (frame > 12 && frame < 120) assert.ok(x > previous, `remote movement stalled on frame ${frame}`);
+    assert.ok(x <= (latest + .12) * 7 + 1e-6);
+    previous = x;
+  }
+  close(previous, (latest + .12) * 7);
 });

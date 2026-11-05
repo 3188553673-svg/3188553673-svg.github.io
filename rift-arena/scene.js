@@ -1,6 +1,6 @@
 import * as THREE from './vendor/three.module.js';
-import { FrameBudget } from './scene-performance.js?v=perf2';
-import { MovementPredictor } from './client-movement.js?v=perf2';
+import { FrameBudget } from './scene-performance.js?v=motion3';
+import { MovementPredictor, SnapshotPlayback, remotePosition } from './client-movement.js?v=motion3';
 import { createOriginalHero } from './original-heroes.js?v=original2';
 import { buildArenaEnvironment } from './arena-environment.js';
 
@@ -27,10 +27,7 @@ export class ArenaScene {
     this.geometries = new Map();
     this.textures = new Set();
     this.clock = 0;
-    this.lastSnapshot = 0;
-    this.snapshotTime = 0;
-    this.motionSampleSeen = false;
-    this.motionTick = -1;
+    this.motionPlayback = new SnapshotPlayback();
     this.predictor = new MovementPredictor();
     this.frameBudget = new FrameBudget(window.devicePixelRatio || 1);
     this.performance = this.frameBudget.metrics;
@@ -346,7 +343,7 @@ export class ArenaScene {
     // Raycast on a separate layer: zero-opacity pick volumes still cost a draw call.
     pick.layers.set(1);
     pick.position.y = kind === 'hero' ? 1.3 : kind === 'minion' ? 0.9 : 2.7; pick.userData.entityId = unit.id; group.add(pick); this.pickTargets.push(pick);
-    const entry = { group, model, asset, label, teamRing, selfRing, shield, recall, pick, data: unit, tx: finite(unit.x), tz: finite(unit.z), px: finite(unit.x), pz: finite(unit.z), vx: 0, vz: 0, angle: 0, swing: -100, phase: Math.random() * 6 };
+    const entry = { group, model, asset, label, teamRing, selfRing, shield, recall, pick, data: unit, tx: finite(unit.x), tz: finite(unit.z), vx: 0, vz: 0, motion: [], displaySpeed: 0, moving: false, angle: 0, swing: -100, phase: Math.random() * 6 };
     this.entities.set(unit.id, entry); this.updateLabel(entry, { ...unit, kind });
     return entry;
   }
@@ -389,9 +386,9 @@ export class ArenaScene {
     if (this.previewCircle) this.previewCircle.material = this.material(CHAMPION[champion], 0.6, 0.7);
   }
 
-  setState(state, selfId) {
+  setState(state, selfId, arrivedAt = performance.now()) {
     if (!this.available || this.disposed) return;
-    const previousPhase = this.state?.phase;
+    const newMatch = state?.phase === 'playing' && (this.state?.phase !== 'playing' || state.room !== this.state.room);
     this.selfId = selfId; this.state = state;
     const playing = state && ['playing', 'finished'].includes(state.phase);
     this.preview.visible = !playing;
@@ -402,11 +399,16 @@ export class ArenaScene {
       for (const effect of this.effects.values()) this.removeEffect(effect); this.effects.clear();
       for (const effect of this.localEffects) { this.fxLayer.remove(effect.group); effect.ring.material.dispose(); } this.localEffects.length = 0;
       for (const f of this.floaters) { this.fxLayer.remove(f.sprite); f.texture.dispose(); f.material.dispose(); } this.floaters.length = 0;
-      this.predictor.reset(); this.motionSampleSeen = false; this.motionTick = -1; this.snapshotTime = 0;
+      this.predictor.reset(); this.motionPlayback.reset();
       return;
     }
+    if (newMatch) { this.predictor.reset(); this.motionPlayback.reset(); }
     this.selfTeam = state.players?.find(p => p.id === selfId)?.team ?? state.heroes?.find(p => p.id === selfId)?.team ?? 0;
-    const time = finite(state.time), advancingMotion = !this.motionSampleSeen || time > this.snapshotTime + 0.00001, delta = Math.max(0.03, time - this.snapshotTime), ids = new Set();
+    const time = finite(state.time);
+    const previousTime = this.motionPlayback.latest;
+    const advancingMotion = previousTime === null || time > previousTime;
+    const delta = Math.max(.03, time - (previousTime ?? time));
+    const ids = new Set();
     for (const unit of [...(state.structures || []), ...(state.minions || []), ...(state.heroes || [])]) {
       if (!unit?.id || !Number.isFinite(unit.x) || !Number.isFinite(unit.z)) continue;
       ids.add(unit.id); let entry = this.entities.get(unit.id);
@@ -418,7 +420,18 @@ export class ArenaScene {
       // a changed position on that same tick is an authoritative teleport.
       const expectedSpeed = finite(unit.effectiveSpeed, finite(unit.speed, unit.kind === 'minion' ? 4.2 : 7));
       const teleported = distance > Math.max(2, expectedSpeed * delta * 2.5);
-      if (state.phase === 'finished' || teleported || entry.data.dead !== unit.dead || (!advancingMotion && distance > .001) || (unit.motionRevision !== undefined && entry.data.motionRevision !== undefined && unit.motionRevision !== entry.data.motionRevision)) { entry.group.position.x = unit.x; entry.group.position.z = unit.z; entry.vx = entry.vz = 0; }
+      const revised = unit.motionRevision !== undefined && entry.data.motionRevision !== undefined && unit.motionRevision !== entry.data.motionRevision;
+      const snap = newMatch || state.phase === 'finished' || teleported || entry.data.dead !== unit.dead || (!advancingMotion && distance > .001) || revised;
+      if (snap) {
+        entry.group.position.x = unit.x; entry.group.position.z = unit.z;
+        entry.vx = entry.vz = entry.displaySpeed = 0;
+        entry.moving = false;
+        entry.motion.length = 0;
+      }
+      if ((advancingMotion || snap || !entry.motion.length) && (unit.kind === 'hero' || unit.kind === 'minion')) {
+        entry.motion.push({ time, x: unit.x, z: unit.z });
+        if (entry.motion.length > 12) entry.motion.shift();
+      }
       entry.tx = unit.x; entry.tz = unit.z; entry.data = unit;
       entry.selfRing && (entry.selfRing.visible = unit.id === selfId && !unit.dead);
       entry.teamRing.visible = !unit.dead;
@@ -428,11 +441,11 @@ export class ArenaScene {
       if (entry.shield) entry.shield.visible = finite(unit.shield) > 0 && !unit.dead;
       entry.recall.visible = Boolean(unit.recalling) && !unit.dead;
       this.updateLabel(entry, unit);
-      if (unit.id === selfId && state.phase === 'playing') this.predictor.receive(unit, performance.now());
+      if (unit.id === selfId && state.phase === 'playing') this.predictor.receive(unit, arrivedAt);
     }
     for (const id of [...this.entities.keys()]) if (!ids.has(id)) this.removeEntity(id);
     if (state.phase === 'finished') this.predictor.reset();
-    if (state.phase === 'playing' && previousPhase !== 'playing') {
+    if (newMatch) {
       const own = this.entities.get(selfId);
       if (own) { this.locked = true; this.focusTarget.set(clamp(own.tx + (this.selfTeam ? -5 : 5), -28, 28), 0.7, clamp(own.tz, -3.5, 3.5)); this.focus.copy(this.focusTarget); }
     }
@@ -440,7 +453,7 @@ export class ArenaScene {
     this.updateEffects(state.effects || []);
     for (const event of state.events || []) this.consumeEvent(event);
     if (this.seenEvents.size > 800) this.seenEvents = new Set([...this.seenEvents].slice(-400));
-    if (advancingMotion) { this.snapshotTime = time; this.motionTick = state.tick; this.lastSnapshot = performance.now(); this.motionSampleSeen = true; }
+    if (advancingMotion) this.motionPlayback.record(time, arrivedAt);
   }
 
   updateProjectiles(list) {
@@ -531,7 +544,12 @@ export class ArenaScene {
   setLatency(roundTripMs) { this.predictor.setLatency(roundTripMs); }
 
   setQuality(mode) {
-    const ratio = this.frameBudget.setQuality(mode); this.renderer?.setPixelRatio(ratio); this.resize();
+    const ratio = this.frameBudget.setQuality(mode);
+    if (this.renderer) {
+      this.renderer.setPixelRatio(ratio);
+      this.renderer.shadowMap.enabled = mode !== 'smooth';
+    }
+    this.resize();
     return this.performance;
   }
 
@@ -567,27 +585,35 @@ export class ArenaScene {
     const playing = this.state && ['playing', 'finished'].includes(this.state.phase);
     const half = playing ? this.zoom : PREVIEW_HALF; if (half !== this.lastOrthoHalf) this.resize();
     const self = this.entities.get(this.selfId);
-    if (playing && this.locked && self) { this.focusTarget.x = clamp(self.group.position.x + (this.selfTeam ? -5 : 5), -28, 28); this.focusTarget.z = clamp(self.group.position.z, -3.5, 3.5); }
-    else if (!playing) this.focusTarget.set(1.8, 0.7, 0);
-    this.focus.lerp(this.focusTarget, 1 - Math.exp(-dt * 4.8));
-    this.camera.position.set(this.focus.x, playing ? 30 + (this.zoom - 18) * 0.5 : 17.8, this.focus.z + 24); this.camera.lookAt(this.focus);
     if (this.waterTexture) { this.waterTexture.offset.x = this.clock * 0.008; this.waterTexture.offset.y = this.clock * 0.004; }
     if (this.dust) { this.dust.position.y = Math.sin(this.clock * 0.2) * 0.4; this.dust.rotation.y = Math.sin(this.clock * 0.025) * 0.015; }
     if (!playing && this.previewModel) { if (this.previewAsset) this.previewAsset.update(dt); else { const body = this.previewModel.userData.body; body.position.y = Math.sin(this.clock * 1.8) * 0.025; } this.previewModel.rotation.y = -0.24 + Math.sin(this.clock * 0.22) * 0.08; this.previewCircle.rotation.z = this.clock * 0.035; }
-    const prediction = Math.min(0.08, Math.max(0, (performance.now() - this.lastSnapshot) / 1000));
+    const playbackTime = this.motionPlayback.advance(dt, renderStarted);
     const predictedSelf = this.state?.phase === 'playing' && self ? this.predictor.step(dt, renderStarted) : null;
     for (const entry of this.entities.values()) {
-      const unit = entry.data, alpha = 1 - Math.exp(-dt * 18), x = entry.tx + entry.vx * prediction, z = entry.tz + entry.vz * prediction;
-      if (unit.id === this.selfId && predictedSelf) { entry.group.position.x = predictedSelf.x; entry.group.position.z = predictedSelf.z; }
-      else { entry.group.position.x += (x - entry.group.position.x) * alpha; entry.group.position.z += (z - entry.group.position.z) * alpha; }
-      const speed = Math.hypot(entry.group.position.x - entry.px, entry.group.position.z - entry.pz) / Math.max(0.001, dt); entry.px = entry.group.position.x; entry.pz = entry.group.position.z;
+      const unit = entry.data, position = entry.group.position;
+      const previousX = position.x, previousZ = position.z;
+      if (unit.id === this.selfId && predictedSelf) {
+        position.x = predictedSelf.x; position.z = predictedSelf.z;
+      } else if (entry.motion.length) {
+        const target = remotePosition(entry.motion, playbackTime, entry.vx, entry.vz);
+        const dx = target.x - position.x, dz = target.z - position.z;
+        const expectedSpeed = finite(unit.effectiveSpeed, finite(unit.speed, unit.kind === 'minion' ? 4.2 : 7));
+        const limit = Math.max(1, expectedSpeed * 1.9) * dt;
+        const blend = Math.min(1, limit / (Math.hypot(dx, dz) || 1));
+        position.x += dx * blend; position.z += dz * blend;
+      }
+      const instantaneousSpeed = Math.hypot(position.x - previousX, position.z - previousZ) / Math.max(.001, dt);
+      entry.displaySpeed += (instantaneousSpeed - entry.displaySpeed) * (1 - Math.exp(-dt * 15));
+      const speed = entry.displaySpeed;
       const facing = unit.id === this.selfId && Number.isFinite(predictedSelf?.facing) ? predictedSelf.facing : Number.isFinite(unit.facing) ? unit.facing : Math.atan2(entry.vx, entry.vz);
       entry.angle = angleLerp(entry.angle, facing, 1 - Math.exp(-dt * 14));
       if (unit.kind === 'hero' || unit.kind === 'minion') {
         entry.model.rotation.y = entry.angle;
         if (entry.asset) {
           if (Boolean(unit.dead) !== entry.assetWasDead) { entry.asset.play(unit.dead ? 'death' : 'idle', { force: true }); entry.assetWasDead = Boolean(unit.dead); }
-          if (!unit.dead) entry.asset.play(speed > .3 ? 'run' : 'idle');
+          entry.moving = speed > (entry.moving ? .22 : .55);
+          if (!unit.dead) entry.asset.play(entry.moving ? 'run' : 'idle');
           entry.asset.update(dt); continue;
         }
         const walk = clamp(speed / 5, 0, 1), phase = this.clock * (unit.kind === 'minion' ? 10 : 9) + entry.phase, limbs = entry.model.userData.limbs;
@@ -600,6 +626,10 @@ export class ArenaScene {
       } else if (entry.model.userData.crystal) { entry.model.userData.crystal.rotation.y += dt * 0.45; entry.model.userData.crystal.position.y = (unit.kind === 'tower' ? 4.8 : 3.1) + Math.sin(this.clock * 1.7) * 0.08; }
       if (entry.recall.visible) { entry.recall.rotation.y += dt * 1.6; entry.recall.children.forEach((ring, n) => { ring.position.y = ((this.clock * 1.3 + n * 0.7) % 2.4) + 0.08; }); }
     }
+    if (playing && this.locked && self) { this.focusTarget.x = clamp(self.group.position.x + (this.selfTeam ? -5 : 5), -28, 28); this.focusTarget.z = clamp(self.group.position.z, -3.5, 3.5); }
+    else if (!playing) this.focusTarget.set(1.8, 0.7, 0);
+    this.focus.lerp(this.focusTarget, 1 - Math.exp(-dt * 4.8));
+    this.camera.position.set(this.focus.x, playing ? 30 + (this.zoom - 18) * 0.5 : 17.8, this.focus.z + 24); this.camera.lookAt(this.focus);
     for (const entry of this.projectiles.values()) { const d = entry.data, alpha = 1 - Math.exp(-dt * 25); entry.group.position.x += (d.x - entry.group.position.x) * alpha; entry.group.position.z += (d.z - entry.group.position.z) * alpha; entry.group.rotation.y = Math.atan2(finite(d.dx, 1), finite(d.dz)); }
     for (const [id, effect] of this.effects) {
       effect.life -= dt; if (effect.life <= -0.2) { this.removeEffect(effect); this.effects.delete(id); continue; }
