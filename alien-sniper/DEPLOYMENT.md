@@ -25,7 +25,11 @@
 
 ## 当前状态
 
-中转服务需要在账号上实际部署，不能仅凭上传 GitHub 视为已上线。默认 `connection.json` 仍为 `direct`，所以未配置中转服务前，原 GitHub Pages 入口仍受直连网络限制。
+当前已部署免费的联机服务器：<https://alien-sniper-relay-3188553673.onrender.com>。
+
+原 GitHub Pages 游戏入口 <https://3188553673-svg.github.io/alien-sniper/> 的 `connection.json` 已配置为 `relay`。双方需要刷新网页并重新创建房间，不能沿用旧的直连房间。
+
+部署通过全部 18 项服务器及连接测试，另已通过真实公网 HTTPS/WSS 双人对局检查。服务器使用单个 Free 实例，不依赖房主电脑运行 Node.js。
 
 ## 免费实例限制
 
