@@ -1,4 +1,7 @@
 const MAX_MESSAGE = 64 * 1024;
+const MAX_CONTROL_FRAMES = 256;
+const MAX_CONTROL_BYTES = 128 * 1024;
+const MAX_STATE_BYTES = 1024 * 1024;
 
 function frame(opcode, payload = Buffer.alloc(0)) {
   if (!Buffer.isBuffer(payload)) payload = Buffer.from(payload);
@@ -27,15 +30,60 @@ export function websocket(socket, onMessage, onClose) {
   let fragmented = false;
   let closed = false;
   let reported = false;
+  let blocked = false;
+  let flushing = false;
+  let latestState = null;
+  let controlBytes = 0;
+  const controls = [];
   const report = () => { if (!reported) { reported = true; onClose(); } };
+  function clearPending() {
+    latestState = null; controls.length = 0; controlBytes = 0;
+    buffer = Buffer.alloc(0); fragments = []; fragmentLength = 0; fragmented = false;
+    socket.off('drain', onDrain);
+  }
+  function finish() { closed = true; clearPending(); report(); }
+  function flush() {
+    if (closed || socket.destroyed || blocked || flushing) return;
+    flushing = true;
+    try {
+      while (!closed && !socket.destroyed && !blocked) {
+        let data;
+        if (controls.length) { data = controls.shift(); controlBytes -= data.length; }
+        else if (latestState) { data = latestState; latestState = null; }
+        else break;
+        // A false result still accepts this frame into Node's stream buffer.
+        // Remove it before writing and resume only when drain fires.
+        if (socket.write(data) === false) blocked = true;
+      }
+    } catch {
+      finish(); socket.destroy();
+    } finally { flushing = false; }
+  }
+  function onDrain() { blocked = false; flush(); }
+  function enqueue(data, isState = false) {
+    if (closed || socket.destroyed) return;
+    if (isState) {
+      if (data.length > MAX_STATE_BYTES) return connection.close(1013, 'State exceeds transport budget');
+      latestState = data;
+    } else {
+      if (controls.length >= MAX_CONTROL_FRAMES || controlBytes + data.length > MAX_CONTROL_BYTES) {
+        return connection.close(1013, 'Client is not reading');
+      }
+      controls.push(data); controlBytes += data.length;
+    }
+    flush();
+  }
   const connection = {
     send(value) {
-      if (closed || socket.destroyed || socket.writableLength > 1024 * 1024) return;
-      socket.write(frame(1, JSON.stringify(value)));
+      if (closed || socket.destroyed) return;
+      // A departed room's queued state cannot follow its leave acknowledgement.
+      if (value?.type === 'left' || value?.type === 'welcome') latestState = null;
+      enqueue(frame(1, JSON.stringify(value)), value?.type === 'state');
     },
     close(code = 1000, reason = '') {
       if (closed) return;
       closed = true;
+      clearPending();
       const message = Buffer.from(reason).subarray(0, 123);
       const data = Buffer.alloc(message.length + 2);
       data.writeUInt16BE(code);
@@ -67,7 +115,7 @@ export function websocket(socket, onMessage, onClose) {
           offset = 10;
           if (length <= 65535) return connection.close(1002, 'Invalid length');
         }
-        if (length > MAX_MESSAGE || fragmentLength + length > MAX_MESSAGE) return connection.close(1009, 'Message too large');
+        if (length > MAX_MESSAGE || opcode < 8 && fragmentLength + length > MAX_MESSAGE) return connection.close(1009, 'Message too large');
         if (opcode >= 8 && (!fin || length > 125)) return connection.close(1002, 'Invalid control frame');
         if (buffer.length < offset + 4 + length) return;
         const mask = buffer.subarray(offset, offset + 4);
@@ -78,11 +126,12 @@ export function websocket(socket, onMessage, onClose) {
         if (opcode === 8) {
           if (data.length === 1) return connection.close(1002, 'Invalid close');
           closed = true;
+          clearPending();
           socket.end(frame(8, data));
           report();
           return;
         }
-        if (opcode === 9) { socket.write(frame(10, data)); continue; }
+        if (opcode === 9) { enqueue(frame(10, data)); continue; }
         if (opcode === 10) continue;
         if (opcode === 2) return connection.close(1003, 'Text messages only');
         if (opcode !== 0 && opcode !== 1) return connection.close(1002, 'Unknown opcode');
@@ -99,8 +148,9 @@ export function websocket(socket, onMessage, onClose) {
     },
   };
   socket.on('data', connection.feed);
-  socket.on('error', report);
-  socket.on('close', report);
+  socket.on('drain', onDrain);
+  socket.on('error', finish);
+  socket.on('close', finish);
   socket.setNoDelay(true);
   return connection;
 }

@@ -170,6 +170,7 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
     // is retained instead of silently deleting simulation time above 100 ms.
     accumulator = Math.min(accumulator, .25);
     for (const room of rooms.values()) {
+      if (room.phase !== 'playing') continue;
       try {
         for (let i = 0; i < steps; i++) step(room, .05);
         if (steps > 0) publish(room);
