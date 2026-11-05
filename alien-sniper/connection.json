@@ -1,4 +1,4 @@
 {
-  "mode": "direct",
-  "serverUrl": ""
+  "mode": "relay",
+  "serverUrl": "https://alien-sniper-relay-3188553673.onrender.com"
 }
