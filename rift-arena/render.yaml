@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: rift-arena-duel-3188553673
+    runtime: node
+    plan: free
+    region: singapore
+    rootDir: rift-arena
+    buildCommand: npm test
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
