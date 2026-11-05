@@ -4,6 +4,21 @@ import { CloudTransport } from '../../cloud-transport.js';
 import { createGameServer } from '../server.js';
 import { getTargetParts } from '../../rules.js';
 
+// Node 22 exposes WebSocket but not the browser's global CloseEvent.
+// Supply only the test DOM primitive; browser transport code stays unchanged.
+if (typeof globalThis.CloseEvent === 'undefined') {
+  globalThis.CloseEvent = class CloseEvent extends Event {
+    constructor(type, init = {}) {
+      super(type, init);
+      Object.defineProperties(this, {
+        code: { value: init.code ?? 0, enumerable: true },
+        reason: { value: init.reason ?? '', enumerable: true },
+        wasClean: { value: init.wasClean ?? false, enumerable: true },
+      });
+    }
+  };
+}
+
 const tick = async () => { for (let n = 0; n < 12; n++) await Promise.resolve(); };
 
 function sandbox(t, health) {
