@@ -88,7 +88,10 @@ test('connection does not require AbortSignal.any or AbortSignal.timeout', async
 test('real HTTP/WebSocket integration: two clients join, private targets, miss/body/head, leave and new join', async t => {
   const game = await createGameServer({ port: 0, host: '127.0.0.1' }).listen();
   const base = `http://127.0.0.1:${game.address().port}`;
-  const all = []; t.after(async () => { for (const c of all) c.close(); await game.close(); });
+  const all = []; t.after(async () => {
+    try { for (const c of all) c.close(); }
+    finally { await game.close(); }
+  });
   async function player(name, room) {
     const c = new CloudTransport(base); all.push(c); c.messages = [];
     c.addEventListener('message', e => c.messages.push(JSON.parse(e.data)));
