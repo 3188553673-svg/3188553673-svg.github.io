@@ -2,6 +2,7 @@ import http from 'node:http';
 import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
+import { deflateSync } from 'node:zlib';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { websocket } from './server/websocket.js';
@@ -80,13 +81,21 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
   const error = (client, code, message, seq) => client.ws.send({ type: 'error', code, message, ...(Number.isSafeInteger(seq) ? { seq } : {}) });
   function publish(room) {
     for (const client of clients) {
-      if (client.room === room) client.ws.send({ type: 'state', state: snapshot(room, client.id) });
+      if (client.room !== room) continue;
+      const state = snapshot(room, client.id);
+      if (client.snapshotEncoding === 'deflate') {
+        const data = deflateSync(JSON.stringify(state), { level: 1 }).toString('base64');
+        client.ws.send({ type: 'state', encoding: 'deflate', data });
+      } else {
+        client.ws.send({ type: 'state', state });
+      }
     }
   }
   function leave(client) {
     const room = client.room;
     if (!room) return;
     client.room = null;
+    client.snapshotEncoding = null;
     removePlayer(room, client.id);
     if (!room.players.some(p => !p.isBot)) rooms.delete(room.code);
     else publish(room);
@@ -118,7 +127,8 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
         applyAction(room, client.id, { type: 'start' });
       } catch (e) { leave(client); throw e; }
     }
-    client.ws.send({ type: 'welcome', id: client.id, room: room.code });
+    client.snapshotEncoding = message.snapshotEncoding === 'deflate' ? 'deflate' : null;
+    client.ws.send({ type: 'welcome', id: client.id, room: room.code, ...(client.snapshotEncoding ? { snapshotEncoding: client.snapshotEncoding } : {}) });
     publish(room);
   }
   function onMessage(client, text) {
@@ -154,7 +164,7 @@ export function createArenaServer({ port = 9100, host = '0.0.0.0', maxRooms = 30
     if (shuttingDown || clients.size >= maxClients) { socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n'); return; }
     const accept = createHash('sha1').update(key + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-    const client = { id: randomUUID().slice(0, 12), room: null, ws: null, lastSeen: Date.now(), rateAt: Date.now(), rateCount: 0 };
+    const client = { id: randomUUID().slice(0, 12), room: null, ws: null, snapshotEncoding: null, lastSeen: Date.now(), rateAt: Date.now(), rateCount: 0 };
     client.ws = websocket(socket, text => onMessage(client, text), () => { leave(client); clients.delete(client); });
     clients.add(client);
     if (head.length) client.ws.feed(head);

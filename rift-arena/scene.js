@@ -1,7 +1,7 @@
 import * as THREE from './vendor/three.module.js';
 import { FrameBudget } from './scene-performance.js?v=perf2';
 import { MovementPredictor } from './client-movement.js?v=perf2';
-import { createOriginalHero } from './original-heroes.js';
+import { createOriginalHero } from './original-heroes.js?v=original2';
 import { buildArenaEnvironment } from './arena-environment.js';
 
 const TEAM = [0x47d9ed, 0xf16c80];

@@ -35,7 +35,7 @@ function material(kind, champion) {
       name: `original-${champion}-${kind}`, vertexColors: true,
       roughness: kind === 'metal' ? .57 : kind === 'skin' ? .72 : kind === 'gem' ? .23 : .87,
       metalness: kind === 'metal' ? .48 : kind === 'gem' ? .18 : .02,
-      side: kind === 'cloth' || kind === 'hair' ? THREE.DoubleSide : THREE.FrontSide,
+      side: kind === 'cloth' || kind === 'hair' || kind === 'metal' ? THREE.DoubleSide : THREE.FrontSide,
     });
     if (kind === 'gem') { m.emissive.set(p.gem); m.emissiveIntensity = .24; }
     else {
