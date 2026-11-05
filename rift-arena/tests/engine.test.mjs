@@ -145,3 +145,36 @@ test('defensive tower vision prevents an enemy hiding inside its attack radius',
   assert.ok(snapshot(r,'a').heroes.some(u=>u.id==='b'));
   const before=f.hp;advance(r,1.7);assert.ok(f.hp<before,'tower should acquire the enemy in its nearby bush');
 });
+
+function inertMinion(id, team, x, z) {
+  return { id, kind:'minion', team, minionType:'melee', x, z, facing:0, hp:500, maxHp:500, ad:0, speed:0, attackRange:1.6, attackInterval:999, _attackTimer:999, _radius:.6, _bornAt:0, dead:false, attackAnim:0 };
+}
+test('heroes ordered to the same point retain separate collision circles', () => {
+  const r=game('garen','garen'),[a,b]=isolate(r,{x:-3,z:0},{x:3,z:0});
+  applyAction(r,'a',{type:'move',x:0,z:0});applyAction(r,'b',{type:'move',x:0,z:0});advance(r,2);
+  assert.ok(Math.hypot(a.x-b.x,a.z-b.z)>=a._radius+b._radius-.01);
+  const overlap=game(),[c,d]=isolate(overlap,{x:0,z:0},{x:0,z:0});advance(overlap,1);
+  assert.ok(Math.hypot(c.x-d.x,c.z-d.z)>=c._radius+d._radius-.01);
+});
+test('stationary minions and heroes separate deterministically from an exact shared position', () => {
+  function scenario(){const r=game(),[a,b]=isolate(r,{x:0,z:0},{x:20,z:0});a.speed=0;r.minions=[inertMinion('pile-1',0,0,0),inertMinion('pile-2',0,0,0),inertMinion('pile-3',0,0,0)];advance(r,4);return r;}
+  const one=scenario(),two=scenario(),bodies=[one.heroes[0],...one.minions];
+  for(let i=0;i<bodies.length;i++)for(let j=i+1;j<bodies.length;j++)assert.ok(Math.hypot(bodies[i].x-bodies[j].x,bodies[i].z-bodies[j].z)>=bodies[i]._radius+bodies[j]._radius-.015);
+  assert.deepEqual(bodies.map(u=>[u.x,u.z]),[two.heroes[0],...two.minions].map(u=>[u.x,u.z]));
+});
+test('separation remains finite and inside boundaries even with a corner pile', () => {
+  const r=game(),[a,b]=isolate(r,{x:MAP.maxX-.7,z:MAP.maxZ-.7},{x:MAP.maxX-.7,z:MAP.maxZ-.7});a.speed=0;b.speed=0;
+  r.minions=Array.from({length:5},(_,i)=>inertMinion(`corner-${i}`,0,MAP.maxX-.7,MAP.maxZ-.7));
+  advance(r,5);
+  for(const u of [...r.heroes,...r.minions]) {assert.ok(Number.isFinite(u.x)&&Number.isFinite(u.z));assert.ok(u.x>=MAP.minX+.7&&u.x<=MAP.maxX-.7);assert.ok(u.z>=MAP.minZ+.7&&u.z<=MAP.maxZ-.7);}
+});
+test('collision correction has a per-tick movement budget and cannot be accelerated by command spam', () => {
+  function scenario(spam){const r=game(),[a,b]=isolate(r,{x:-.1,z:0},{x:.1,z:0});for(let i=0;i<spam;i++){applyAction(r,'a',{type:'move',x:0,z:0});applyAction(r,'b',{type:'move',x:0,z:0});}const before=r.heroes.map(u=>({x:u.x,z:u.z}));step(r,.05);for(let i=0;i<2;i++)assert.ok(Math.hypot(r.heroes[i].x-before[i].x,r.heroes[i].z-before[i].z)<=(r.heroes[i].speed+.8)*.05+1e-8);return r.heroes.map(u=>[u.x,u.z]);}
+  assert.deepEqual(scenario(1),scenario(200));
+});
+test('unit separation does not alter flash range, recall destinations or structural movement', () => {
+  const r=game(),[a,b]=isolate(r,{x:-24,z:0},{x:0,z:0});
+  applyAction(r,'a',{type:'summoner',slot:'d',x:10,z:0});assert.equal(a.x,-15);
+  applyAction(r,'a',{type:'move',x:-10,z:0});advance(r,1);assert.ok(a.x>-11,'own tower is not a collision blocker');
+  applyAction(r,'a',{type:'recall'});advance(r,6.1);assert.ok(a.x<-30);
+});

@@ -314,6 +314,44 @@ function moveToward(hero, target, amount) {
   if (len < .05) return false;
   const step = Math.min(len, amount); hero.x = clamp(hero.x + dx / len * step, MAP.minX + .7, MAP.maxX - .7); hero.z = clamp(hero.z + dz / len * step, MAP.minZ + .7, MAP.maxZ - .7); hero.facing = Math.atan2(dx, dz); return true;
 }
+function movementSpeed(u) {
+  const b = u._buffs || {};
+  return (u.speed || 0) * (b.haste > 0 ? 1.3 : 1) * (b.highlander > 0 ? 1.35 : 1) * (b.slow > 0 && !b.highlander ? .65 : 1);
+}
+function separateUnits(room, dt, starts) {
+  const bodies = [...room.heroes, ...room.minions].filter(alive).sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  const anchors = new Map();
+  for (const u of bodies) {
+    let start = starts.get(u.id);
+    const speed = Math.max(u.speed || 0, movementSpeed(u));
+    // Recall, respawn and Alpha Strike are intentional teleports, not walking.
+    if (!start || distance(start, u) > speed * dt + .02) start = copyPoint(u);
+    anchors.set(u.id, { ...start, limit: (speed + .8) * dt });
+  }
+  function push(u, x, z) {
+    const a = anchors.get(u.id);
+    x = clamp(x, MAP.minX + .7, MAP.maxX - .7); z = clamp(z, MAP.minZ + .7, MAP.maxZ - .7);
+    const dx = x - a.x, dz = z - a.z, length = Math.hypot(dx, dz);
+    if (length > a.limit && length > 0) { x = a.x + dx / length * a.limit; z = a.z + dz / length * a.limit; }
+    u.x = clamp(x, MAP.minX + .7, MAP.maxX - .7); u.z = clamp(z, MAP.minZ + .7, MAP.maxZ - .7);
+  }
+  for (let pass = 0; pass < 4; pass++) for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++) {
+    const a = bodies[i], b = bodies[j], desired = (a._radius || .5) + (b._radius || .5) + .06;
+    let dx = b.x - a.x, dz = b.z - a.z, length = Math.hypot(dx, dz);
+    if (length >= desired) continue;
+    if (length < 1e-6) {
+      // An id-based angle is stable across ticks and cannot divide by zero.
+      let hash = 2166136261;
+      for (const c of `${a.id}\0${b.id}`) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
+      const angle = (hash >>> 0) / 4294967296 * Math.PI * 2;
+      dx = Math.cos(angle); dz = Math.sin(angle); length = 0;
+    } else { dx /= length; dz /= length; }
+    const weightA = a.kind === 'hero' ? .2 : 1, weightB = b.kind === 'hero' ? .2 : 1;
+    const overlap = (desired - length) * .9, total = weightA + weightB;
+    push(a, a.x - dx * overlap * weightA / total, a.z - dz * overlap * weightA / total);
+    push(b, b.x + dx * overlap * weightB / total, b.z + dz * overlap * weightB / total);
+  }
+}
 function spawnWave(room) {
   for (const team of [0, 1]) for (let i = 0; i < 4; i++) {
     const ranged = i === 3, scale = 1 + Math.min(.8, room.time / 600);
@@ -387,7 +425,7 @@ function heroStep(room, h, dt) {
   if (h.stunned > 0) return;
   const p = room.players.find(p => p.id === h.id); if (p?.isBot) botThink(room, h);
   if (h._buffs.meditate > 0) return;
-  let speed = h.speed * (h._buffs.haste > 0 ? 1.3 : 1) * (h._buffs.highlander > 0 ? 1.35 : 1) * (h._buffs.slow > 0 && !h._buffs.highlander ? .65 : 1);
+  let speed = movementSpeed(h);
   if (h._buffs.root > 0) speed = 0;
   const order = h._order;
   let target = order.type === 'attack' ? unit(room, order.targetId) : null;
@@ -460,8 +498,10 @@ export function step(room, elapsed = .05) {
   if (!Number.isFinite(elapsed) || elapsed <= 0 || room.phase !== 'playing') return;
   const dt = Math.min(.1, elapsed); room.time += dt; room.tick++;
   if (room.time >= room._nextWave && room.minions.length < 90) { spawnWave(room); room._nextWave += 18; }
+  const movementStarts = new Map([...room.heroes, ...room.minions].filter(alive).map(u => [u.id, copyPoint(u)]));
   for (const h of room.heroes) heroStep(room, h, dt);
   for (const m of room.minions) minionStep(room, m, dt);
+  separateUnits(room, dt, movementStarts);
   for (const t of room.structures) towerStep(room, t, dt);
   for (const p of room.projectiles) projectileStep(room, p, dt);
   for (const z of room._zones) zoneStep(room, z, dt);
