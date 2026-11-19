@@ -1,0 +1,114 @@
+.keyart {
+  background-image: url('art/dungeon-cover.webp');
+  background-color: #30273b;
+  background-position: 50% 43%;
+}
+.roster { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.fighter .face { aspect-ratio: 1.4; }
+.loadout {
+  margin-top: 15px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line);
+}
+.loadout > div { display: flex; align-items: flex-start; gap: 8px; }
+.loadout i { color: var(--red); margin-top: 3px; }
+.loadout small, .loadout strong, .loadout span { display: block; }
+.loadout small { font-size: 10px; font-weight: 800; letter-spacing: .08em; color: #8b6657; }
+.loadout strong { font-size: 15px; margin: 2px 0; }
+.loadout span { color: var(--muted); font-size: 12px; line-height: 1.55; }
+.boss-strip { flex-wrap: wrap; }
+.boss-strip > div:not(.boss-label) { border-left: 1px solid var(--line); padding-left: 12px; }
+#minimap {
+  position: absolute; right: 7px; top: 7px; width: clamp(72px, 11%, 118px); height: auto;
+  pointer-events: none; image-rendering: pixelated; opacity: .88;
+}
+#room-guidance { text-align: right; display: grid; gap: 3px; justify-items: end; flex: 1; }
+#interaction { color: #ffe18c; font-size: 12px; }
+#room-guidance #objective { line-height: 1.4; }
+.vital-v2 {
+  display: grid; grid-template-columns: auto 58px; gap: 2px 7px; align-items: center;
+  padding: 3px 8px 3px 0; border-right: 1px solid #5a4c5f; font-size: 10px;
+}
+.vital-v2 strong, .vital-v2 small { white-space: nowrap; }
+.vital-v2 strong { color: #fff6df; font-size: 11px; }
+.vital-v2 small { color: #ffe18c; font-size: 9px; }
+.bars { display: grid; gap: 2px; }
+.meter { display: block; height: 5px; background: #151321; border-radius: 1px; overflow: hidden; }
+.meter b { display: block; height: 100%; }
+.meter.hp b { background: #ff8170; }
+.meter.shield b { background: #c6e4ef; }
+.meter.energy b { background: #58c9ed; }
+.vital-v2 .weapon-name { color: #ded3db; font-size: 10px; }
+#vitals { max-width: 76%; }
+.talent-panel {
+  position: absolute; z-index: 3; inset: 0;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  background: #1b1724e8; color: #fff3d6; text-align: center; padding: 10px;
+  line-height: 1.4; overflow: auto;
+}
+.talent-panel h2 { font-size: clamp(16px, 3vw, 28px); color: var(--yellow); margin: 2px 0; }
+.talent-panel p { font-size: 12px; margin: 3px 0 9px; }
+.talents { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; width: min(96%, 640px); }
+.talents button {
+  border: 2px solid #ceb77c; border-radius: 3px; background: #3e3345; color: #fff3d4;
+  padding: 11px 7px; text-align: center; display: grid; align-content: start; gap: 4px;
+}
+.talents button:hover, .talents button:focus-visible { background: #5c4351; border-color: var(--yellow); }
+.talents b { font-size: 15px; }
+.talents small { font-size: 11px; line-height: 1.4; color: #e0d2d1; }
+.weapon-list { display: grid; gap: 0; }
+.weapon-entry { border-bottom: 1px solid var(--line); padding: 8px 0; font-size: 13px; }
+.weapon-entry strong { margin-right: 9px; }
+.weapon-entry em { color: #37657b; font: 750 11px var(--mono); }
+.weapon-entry p { margin: 3px 0 0; }
+#modal-body .weapon-entry p { font-size: 12px; color: var(--muted); }
+@media (max-width: 760px) {
+  .roster { gap: 7px; }
+  .loadout { margin-top: 10px; padding-top: 9px; gap: 8px; }
+  .loadout span { font-size: 11px; }
+  .loadout i { display: none; }
+  .boss-strip { column-gap: 7px; row-gap: 5px; }
+  .boss-strip > div:not(.boss-label) { padding-left: 6px; }
+  #room-guidance { text-align: left; justify-items: start; flex-basis: 100%; }
+  #vitals { max-width: 100%; }
+}
+@media (max-width: 455px) {
+  .mast-actions { gap: 4px; }
+  .mast-actions .top-btn { padding: 6px; }
+  .mast-actions .top-btn svg { width: 15px; height: 15px; }
+  .brand strong { font-size: 15px; }
+  .brand small { font-size: 7px; }
+  .brand { gap: 6px; }
+  .fighter .face { aspect-ratio: 1.05; }
+  .card-info { padding: 5px 4px; }
+  .card-info b { font-size: 14px; }
+  .card-info small { font-size: 9px; }
+  .talents { gap: 3px; }
+  .talents button { padding: 6px 2px; }
+  .talents b { font-size: 12px; }
+  .talents small { font-size: 10px; }
+}
+@media (pointer:coarse) and (orientation:landscape) and (max-height:620px) {
+  .arena { max-width:min(100%,calc((100dvh - 58px)*1.7778)); }
+  .status-row { flex-wrap: nowrap; }
+  #room-guidance { flex-basis: auto; justify-items: end; }
+  #interaction { font-size: 10px; }
+  #vitals { gap: 2px; max-width: 66%; }
+  .vital-v2 { padding: 1px 4px; grid-template-columns: auto 40px; gap: 1px 3px; }
+  .vital-v2 strong, .vital-v2 small, .vital-v2 .weapon-name { font-size: 8px; }
+}
+
+.vital-v2 .stat-numbers { display: flex; gap: 5px; grid-column: 1; grid-row: 2; font-size: 9px; white-space: nowrap; }
+.stat-numbers i { font-style: normal; color: #ff9687; }
+.stat-numbers i:nth-child(2) { color: #d6eaf5; }
+.stat-numbers i:nth-child(3) { color: #77d5f3; }
+.vital-v2 .bars { grid-row: 1; grid-column: 2; }
+.vital-v2 .weapon-name { grid-column: 1; grid-row: 3; }
+.vital-v2 small { grid-column: 2; grid-row: 3; }
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 620px) {
+  .vital-v2 .stat-numbers { font-size: 8px; gap: 3px; }
+  .vital-v2 .bars { grid-column: 2; grid-row: 2; }
+}
