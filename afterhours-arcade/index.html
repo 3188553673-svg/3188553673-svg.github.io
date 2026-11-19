@@ -4,13 +4,13 @@
 <base href="./v2/">
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#201c24"><title>放学后禁止加练 · 校园地牢</title>
-<link rel="icon" href="icon.svg"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="dungeon-ui.css">
+<link rel="icon" href="icon.svg"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="dungeon-ui.css?v=0.2.1">
 </head>
 <body>
 <header class="mast"><div class="mast-inner"><div class="brand"><i data-icon="arcade"></i><div><strong>课后街机厅</strong><small>AFTER HOURS ARCADE</small></div></div>
 <div class="mast-actions"><button id="codex" class="top-btn"><i data-icon="book"></i><span>武器图鉴</span></button><button id="help" class="top-btn"><i data-icon="pad"></i><span>操作手册</span></button><button id="sound" class="top-btn square" aria-label="关闭声音"><i data-icon="speaker"></i></button></div></div></header>
 <main id="home">
-<section class="keyart" aria-label="放学后禁止加练"><div class="cover-copy"><div class="overline"><b></b> 校园地牢 · 1–4 人合作</div><h1><span>放学后</span><strong>禁止加练</strong></h1><p>带上专武下地牢，闯过四层，打响放学铃。</p></div></section>
+<section class="keyart" aria-label="放学后禁止加练"><div class="cover-copy"><div class="overline"><b></b> 校园地牢 v0.2.1 · 1–4 人合作</div><h1><span>放学后</span><strong>禁止加练</strong></h1><p>带上专武下地牢，闯过四层，打响放学铃。</p></div></section>
 <div class="setup">
 <section class="roster-section"><div class="section-head"><div class="heading-pair"><i data-icon="crew"></i><h2>选择角色</h2></div><div id="seat-tabs" class="seat-tabs" hidden></div></div>
 <div class="roster" id="roster" aria-label="可选角色"></div>
@@ -34,5 +34,5 @@
 <div class="touch" id="touch"><div class="stick" id="stick" aria-label="移动摇杆"><b></b></div><div class="touch-actions"><button data-act="interact" aria-label="互动或拾取">用</button><button data-act="swap" aria-label="切换武器">换</button><button data-act="dash">闪</button><button data-act="skill">技</button><button data-act="attack">击</button></div></div></main>
 <dialog id="modal"><div class="dialog-head"><h2 id="modal-title"></h2><button id="modal-close" class="square small-btn" aria-label="关闭">×</button></div><div id="modal-body"></div></dialog>
 <div id="note" role="status" aria-live="polite"></div>
-<script type="module" src="app.mjs"></script>
+<script type="module" src="app.mjs?v=0.2.1"></script>
 </body></html>

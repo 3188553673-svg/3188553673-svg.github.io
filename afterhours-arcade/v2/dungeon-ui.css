@@ -92,7 +92,7 @@
   .talents small { font-size: 10px; }
 }
 @media (pointer:coarse) and (orientation:landscape) and (max-height:620px) {
-  .arena { max-width:min(100%,calc((100dvh - 58px)*1.7778)); }
+  .arena { max-width:min(100%,calc((100dvh - 90px - env(safe-area-inset-bottom))*1.7778)); }
   .status-row { flex-wrap: nowrap; }
   #room-guidance { flex-basis: auto; justify-items: end; }
   #interaction { font-size: 10px; }
@@ -111,4 +111,17 @@
 @media (pointer: coarse) and (orientation: landscape) and (max-height: 620px) {
   .vital-v2 .stat-numbers { font-size: 8px; gap: 3px; }
   .vital-v2 .bars { grid-column: 2; grid-row: 2; }
+}
+
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 620px) {
+  .arena:has(.vital-v2:nth-child(3)) { max-width: min(100%, calc((100dvh - 114px - env(safe-area-inset-bottom))*1.7778)); }
+  .status-row:has(.vital-v2:nth-child(3)) { flex-direction: column; gap: 1px; }
+  .status-row:has(.vital-v2:nth-child(3)) #vitals {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; max-width: 100%; width: 100%;
+  }
+  #vitals:has(.vital-v2:nth-child(3)) .vital-v2 { min-width: 0; grid-template-columns: minmax(0, 1fr) 30%; gap: 1px 2px; padding: 1px 2px; }
+  #vitals:has(.vital-v2:nth-child(3)) .stat-numbers { gap: 2px; grid-column: 1 / -1; }
+  #vitals:has(.vital-v2:nth-child(3)) .bars { grid-row: 1; }
+  #vitals:has(.vital-v2:nth-child(3)) .weapon-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  #vitals:has(.vital-v2:nth-child(3)) small { grid-column: 1 / -1; grid-row: 4; }
 }

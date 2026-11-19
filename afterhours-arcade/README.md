@@ -1,6 +1,6 @@
-# 放学后禁止加练 v0.2
+# 放学后禁止加练 v0.2.1
 
-[打开校园地牢](https://3188553673-svg.github.io/afterhours-arcade/v2/) · [下载局域网主机包](https://3188553673-svg.github.io/afterhours-arcade/v2/afterhours-lan-v0.2.zip)
+[打开校园地牢](https://3188553673-svg.github.io/afterhours-arcade/v2/) · [下载局域网主机包](https://3188553673-svg.github.io/afterhours-arcade/v2/afterhours-lan-v0.2.1.zip)
 
 用科比的训练球、钢铁侠的掌心脉冲、灭建国的家长签章或奶龙的吨吨奶瓶开局。每个角色各有独立的主动技能，途中可以更换武器，最多携带两把。
 

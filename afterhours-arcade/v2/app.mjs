@@ -72,7 +72,7 @@ $('roster').onclick=e=>{const b=e.target.closest('[data-id]');if(b){picks[seat]=
 $('modes').onclick=e=>{const b=e.target.closest('[data-mode]');if(b){mode=b.dataset.mode;seat=0;paintSetup();}};
 $('seat-tabs').onclick=e=>{const b=e.target.closest('[data-seat]');if(b){seat=Number(b.dataset.seat);paintSetup();}};
 $('seat-count').onchange=e=>{localCount=Number(e.target.value);seat=0;paintSetup();};
-function hostKit(){modal('kit','局域网合作','<p>由一台电脑开房。房主下载并完整解压主机包，双击包内对应系统的启动文件，在打开的游戏里选择「局域网」。</p><p>其他人连同一 Wi-Fi，用手机扫码或在浏览器打开房主给的链接，最多四人合作。</p><a class="cta" href="./afterhours-lan-v0.2.zip" download>下载局域网主机包 ↓</a>');}
+function hostKit(){modal('kit','局域网合作','<p>由一台电脑开房。房主下载并完整解压主机包，双击包内对应系统的启动文件，在打开的游戏里选择「局域网」。</p><p>其他人连同一 Wi-Fi，用手机扫码或在浏览器打开房主给的链接，最多四人合作。</p><a class="cta" href="./afterhours-lan-v0.2.1.zip" download>下载局域网主机包 ↓</a>');}
 function joinForm(){modal('join','加入合作房间','<p>输入房主屏幕上的六位房间码。</p><input id="code-input" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="000000" aria-label="六位房间码"><div class="button-row"><button class="launch" id="confirm-join">加入房间</button></div>');const field=$('code-input');field.focus();$('confirm-join').onclick=()=>{const c=field.value.trim();if(!/^\d{6}$/.test(c)){notice('请输入六位数字');return;}closeModal();enter(c);};field.onkeydown=e=>{if(e.key==='Enter')$('confirm-join').click();};}
 $('join-link').onclick=joinForm;
 async function enter(code){if(busy)return;busy=true;$('launch').disabled=true;
