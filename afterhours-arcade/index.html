@@ -1,38 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
-<head>
-<base href="./v2/">
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#201c24"><title>放学后禁止加练 · 校园地牢</title>
-<link rel="icon" href="icon.svg"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="dungeon-ui.css?v=0.2.1">
-</head>
-<body>
-<header class="mast"><div class="mast-inner"><div class="brand"><i data-icon="arcade"></i><div><strong>课后街机厅</strong><small>AFTER HOURS ARCADE</small></div></div>
-<div class="mast-actions"><button id="codex" class="top-btn"><i data-icon="book"></i><span>武器图鉴</span></button><button id="help" class="top-btn"><i data-icon="pad"></i><span>操作手册</span></button><button id="sound" class="top-btn square" aria-label="关闭声音"><i data-icon="speaker"></i></button></div></div></header>
-<main id="home">
-<section class="keyart" aria-label="放学后禁止加练"><div class="cover-copy"><div class="overline"><b></b> 校园地牢 v0.2.1 · 1–4 人合作</div><h1><span>放学后</span><strong>禁止加练</strong></h1><p>带上专武下地牢，闯过四层，打响放学铃。</p></div></section>
-<div class="setup">
-<section class="roster-section"><div class="section-head"><div class="heading-pair"><i data-icon="crew"></i><h2>选择角色</h2></div><div id="seat-tabs" class="seat-tabs" hidden></div></div>
-<div class="roster" id="roster" aria-label="可选角色"></div>
-<div class="loadout">
-<div><i data-icon="weapon"></i><div><small>初始武器</small><strong id="starter-name"></strong><span id="starter-detail"></span></div></div>
-<div><i data-icon="spark"></i><div><small>角色技能</small><strong id="skill-name"></strong><span id="skill-detail"></span></div></div>
-</div></section>
-<section class="setup-panel" aria-label="开始游戏"><div class="section-head"><div class="heading-pair"><i data-icon="pad"></i><h2>出击设置</h2></div></div>
-<div class="mode-row" id="modes"></div><div id="mode-detail" class="mode-detail"></div>
-<div id="local-seats" hidden><label for="seat-count">这台设备的人数</label><select id="seat-count"><option value="1">1 人</option><option value="2">2 人</option></select></div>
-<button class="launch" id="launch"><span>开始闯关</span><i data-icon="go"></i></button><button id="join-link" class="under" hidden>输入邀请码加入</button></section>
-</div>
-<section class="boss-strip"><div class="boss-label"><i data-icon="skull"></i><strong>地牢首领</strong></div><div>钢胆侠</div><div>跑早操的灭霸</div><div>直升机机长</div><div>真假奶龙</div></section>
-</main>
-<main id="lobby" hidden><section class="lobby-box"><div class="section-head"><div class="heading-pair"><i data-icon="wifi"></i><h2>局域网房间</h2></div><button class="small-btn" id="leave-room">离开房间</button></div><div class="lobby-body"><div><p class="cap">房间码</p><div class="room-code" id="room-code"></div><p class="small-copy">同一 Wi-Fi 下，朋友可扫码或打开邀请链接。</p><input readonly id="share-url" aria-label="邀请链接"><button class="small-btn" id="copy-room">复制邀请链接</button></div><img id="qr" alt="房间邀请二维码"></div><div class="room-members" id="room-members"></div><button class="launch" id="start-room"></button></section></main>
-<main id="battle" hidden><section class="arena">
-<div class="scoreboard"><div class="stage-left"><i data-icon="flag"></i><div><small id="stage-count"></small><strong id="stage-name"></strong></div></div><div class="hud-actions"><span id="score"></span><button id="map-toggle" class="small-btn" aria-pressed="true" aria-label="显示或收起小地图">地图</button><button id="pause" class="small-btn"></button></div></div>
-<div class="view"><canvas id="world" width="960" height="540" aria-label="俯视角合作闯关战场"></canvas><canvas id="minimap" width="144" height="84" aria-label="本层小地图"></canvas><div id="talent-panel" class="talent-panel" hidden></div><div class="stage-flash" id="stage-flash" hidden></div></div>
-<div class="status-row"><div id="vitals"></div><div id="room-guidance"><strong id="interaction"></strong><span id="objective"></span></div></div>
-</section><div class="play-keys" id="play-keys"></div>
-<div class="touch" id="touch"><div class="stick" id="stick" aria-label="移动摇杆"><b></b></div><div class="touch-actions"><button data-act="interact" aria-label="互动或拾取">用</button><button data-act="swap" aria-label="切换武器">换</button><button data-act="dash">闪</button><button data-act="skill">技</button><button data-act="attack">击</button></div></div></main>
-<dialog id="modal"><div class="dialog-head"><h2 id="modal-title"></h2><button id="modal-close" class="square small-btn" aria-label="关闭">×</button></div><div id="modal-body"></div></dialog>
-<div id="note" role="status" aria-live="polite"></div>
-<script type="module" src="app.mjs?v=0.2.1"></script>
-</body></html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>放学大乱斗</title><link rel="canonical" href="https://3188553673-svg.github.io/afterclass-arena/v2.2/">
+<meta http-equiv="refresh" content="0;url=../afterclass-arena/v2.2/"></head>
+<body><a href="../afterclass-arena/v2.2/">进入《放学大乱斗》</a></body></html>

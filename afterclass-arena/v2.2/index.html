@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#12121a">
+<title>放学大乱斗 · Afterclass Arena</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="rooms.css"><link rel="stylesheet" href="battle.css">
+</head>
+<body>
+<header class="topbar"><div class="bar-inner">
+<div class="wordmark"><img src="icon.svg" alt="" width="37" height="37"><span>AFTERCLASS <b>ARENA</b></span></div>
+<div class="header-actions"><button id="moves" class="utility"><i data-icon="book"></i><span>出招表</span></button><button id="help" class="utility" aria-label="操作指南"><i data-icon="gamepad"></i><span>操作指南</span></button><button id="audio" class="icon-button" aria-label="关闭音效" title="音效"></button><button id="full" class="icon-button" aria-label="切换全屏" title="全屏"><i data-icon="full"></i></button></div>
+</div></header>
+<main id="home" class="frame">
+<section class="hero" aria-label="放学大乱斗">
+<div class="hero-copy"><div class="hero-kicker"><span class="signal"></span> AFTERCLASS ARENA</div><h1>放学<span>大乱斗</span></h1><p>连按普攻，跃起追击，把对手打出天台。</p></div>
+<canvas id="demo" aria-hidden="true"></canvas><div class="stage-chip"><i data-icon="pin"></i> 夕照天台 · 扩建区</div>
+</section>
+<div class="lobby-grid">
+<section class="roster"><div class="section-head"><div class="section-label"><span class="slashes">///</span><h2>选择斗士</h2><small>FIGHTERS</small></div><div id="seat-switch"></div></div>
+<div id="cards" class="cards" role="group" aria-label="选择斗士"></div>
+<div id="skill-info" class="skill-info" aria-live="polite"></div>
+</section>
+<aside class="setup"><div class="section-head"><div class="section-label"><span class="slashes">///</span><h2>对战设置</h2><small>MATCH</small></div></div>
+<div class="setup-body"><div id="modes" class="modes" role="group" aria-label="游戏模式"></div>
+<div id="options"></div><button id="launch" class="primary"></button></div>
+</aside></div>
+<footer class="home-footer"><span><b></b> 本地街机厅</span><span>AFTERCLASS ARENA &nbsp; / &nbsp; V2.2</span></footer>
+</main>
+<main id="room" class="frame" hidden></main>
+<main id="battle" hidden>
+<div class="battle-wrap"><div class="battle-bar"><span class="battle-stage"><span class="signal"></span>夕照天台 · 扩建区 <b>ROOFTOP</b></span><span id="match-kind"></span><button id="back-game" class="utility"><i data-icon="menu"></i><span>菜单</span></button></div>
+<div id="field"><canvas id="arena" width="960" height="540" aria-label="平台格斗场"></canvas><div id="hud"></div><div id="shout" aria-live="polite"></div><div id="game-cover" hidden></div><div id="touch"><div class="touch-pad"><button data-action="left">◀</button><button data-action="down">▼</button><button data-action="right">▶</button></div><div class="touch-act"><button data-action="dodge">闪</button><button data-action="jump">跳</button><button data-action="skill">技</button><button data-action="attack">击</button></div></div></div>
+<div id="practice-reference" hidden aria-label="练习连招">
+<span id="practice-facing"></span>
+<span class="practice-move"><strong>地面三连</strong><kbd><span class="practice-key">J › J › J</span><span class="practice-tap">击 › 击 › 击</span></kbd></span>
+<span class="practice-move"><strong>空中两连</strong><kbd><span class="practice-key">W › J › J</span><span class="practice-tap">跳 › 击 › 击</span></kbd></span>
+<span class="practice-move"><strong id="practice-skill"></strong><kbd><span class="practice-key">K</span><span class="practice-tap">技</span></kbd></span>
+</div>
+<div class="match-foot"><span id="keys-foot"></span><span>击飞值越高，受到的击退越远</span></div>
+</div></main>
+<dialog id="modal"><div class="dialog-top"><span class="slashes">///</span><h2 id="modal-title"></h2><button id="close-modal" class="icon-button" aria-label="关闭"><i data-icon="close"></i></button></div><div id="modal-content"></div></dialog>
+<div id="notice" role="status" hidden></div><script type="module" src="app.mjs"></script>
+</body></html>
