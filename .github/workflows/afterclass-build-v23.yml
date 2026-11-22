@@ -1,0 +1,23 @@
+name: Package Afterclass Arena v2.3
+on:
+  push:
+    branches: [afterclass-host-kit-v2.3]
+permissions:
+  contents: write
+jobs:
+  package:
+    if: "${{ contains(github.event.head_commit.message, 'Assemble approved host kit') }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild and verify the tested archive
+        run: |
+          cp afterclass-arena/v2.2/afterclass-arena-lan-v2.2.zip host.zip
+          git apply --binary host-v23.patch
+          echo "9affbf92d21030bc66bd4da539c1e6efa62247fe04be69f6a86b5df0678b1ab3  host.zip" | sha256sum -c -
+          unzip -tq host.zip
+          mkdir -p afterclass-arena/v2.3
+          mv host.zip afterclass-arena/v2.3/afterclass-arena-lan-v2.3.zip
+          git add -- afterclass-arena/v2.3/afterclass-arena-lan-v2.3.zip
+          git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com commit -m 'Build verified Afterclass Arena v2.3 host kit'
+          git push origin HEAD:refs/heads/afterclass-host-kit-v2.3
