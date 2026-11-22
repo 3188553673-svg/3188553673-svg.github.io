@@ -1,8 +1,8 @@
-# 放学大乱斗 v2.2
+# 放学大乱斗 v2.3
 
-[开始格斗](https://3188553673-svg.github.io/afterclass-arena/v2.2/) · [进训练场](https://3188553673-svg.github.io/afterclass-arena/v2.2/?mode=training) · [下载局域网主机包](https://3188553673-svg.github.io/afterclass-arena/v2.2/afterclass-arena-lan-v2.2.zip)
+[开始格斗](https://3188553673-svg.github.io/afterclass-arena/v2.3/) · [进训练场](https://3188553673-svg.github.io/afterclass-arena/v2.3/?mode=training) · [下载局域网主机包](https://3188553673-svg.github.io/afterclass-arena/v2.3/afterclass-arena-lan-v2.3.zip)
 
-七名斗士可以挑战电脑、同机双打、对木桩练习或加入最多四人的局域网混战。按左或右转身，松手保持朝向。连点三下普攻能打地面三连，跳起后按普攻可以打空中攻击。点技能、移动加技能、按住下加技能分别对应三种角色招式。
+胜者会在结算时表演角色专属动画。木桩固定在地板上，可以连续练习。七名斗士可以挑战电脑、同机双打、对木桩练习或加入最多四人的局域网混战。按左或右转身，松手保持朝向。连点三下普攻能打地面三连，跳起后按普攻可以打空中攻击。点技能、移动加技能、按住下加技能分别对应三种角色招式。
 
 | 操作 | 玩家 1 | 玩家 2 |
 | --- | --- | --- |
