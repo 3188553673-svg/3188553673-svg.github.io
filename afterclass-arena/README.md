@@ -1,6 +1,8 @@
-# 放学大乱斗 v3.0
+# 放学大乱斗 v3.1
 
-[开始格斗](https://3188553673-svg.github.io/afterclass-arena/v3.0/) · [进训练场](https://3188553673-svg.github.io/afterclass-arena/v3.0/?mode=training) · [下载局域网主机包](https://3188553673-svg.github.io/afterclass-arena/v3.0/afterclass-arena-lan-v3.0.zip)
+[开始格斗](https://3188553673-svg.github.io/afterclass-arena/v3.1/) · [进训练场](https://3188553673-svg.github.io/afterclass-arena/v3.1/?mode=training) · [下载局域网主机包](https://3188553673-svg.github.io/afterclass-arena/v3.1/afterclass-arena-lan-v3.1.zip)
+
+七人各有招牌打法：豆包用书签换位，灭建国架招盖印，火箭浣熊遥控布雷，钢铁侠悬停俯冲，良子攒脚程扛摔，徐静雨回收篮板，奶龙滚跳坐墩。训练场可开启木桩还手练防反。
 
 每回合 60 秒，打空血条或时间到时剩余血量领先即可得分，先赢两回合获胜。七名斗士有各自的普通技、方向派生和必杀技，选人时可以搭配援助。支持人机、同机双人、固定木桩训练和最多四人的局域网混战。
 
