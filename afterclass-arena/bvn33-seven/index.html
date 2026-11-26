@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<link rel="icon" href="./faces/iron.png"><meta name="theme-color" content="#16171b">
+<title>死神 VS 火影 · 七人移植版</title>
+<link rel="stylesheet" href="./style.css"><link rel="stylesheet" href="./lan.css">
+</head>
+<body>
+<main>
+<header><div><span class="kicker" lang="en">BLEACH <b>VS</b> NARUTO</span><h1>死神<span>VS</span>火影 <small>七人移植版</small></h1></div><button id="fullscreen" type="button" title="全屏游戏">全屏</button></header>
+<div class="cabinet" id="cabinet">
+<div id="game-stage" aria-label="死神VS火影对战画面"><div id="loading" role="status"><strong>正在载入游戏</strong><span id="progress">准备游戏画面…</span><progress></progress><button id="retry" hidden>重新载入</button></div></div>
+<div id="touchpad" aria-label="触屏操作"><div class="cross"><button data-key="W">↑</button><button data-key="A">←</button><button data-key="S">防</button><button data-key="D">→</button></div><div class="actions"><button data-key="U">技</button><button data-key="I">必</button><button data-key="O">援</button><button data-key="J">攻</button><button data-key="K">跳</button><button data-key="L">闪</button></div></div>
+</div>
+<div class="controls"><span><kbd>A</kbd><kbd>D</kbd> 移动</span><span><kbd>S</kbd> 防御</span><span><kbd>J</kbd> 确认 / 普攻</span><span><kbd>K</kbd> 跳</span><span><kbd>L</kbd> 闪</span><span><kbd>U</kbd> 技</span><span><kbd>I</kbd> 必杀</span><span><kbd>O</kbd> 援助</span></div>
+<details><summary>同机双人和局域网</summary><p>同机双人在主菜单选 SINGLE PLAY，再选 VS PEOPLE。二号用方向键移动和防御，键盘上排或小键盘 1–6 对应攻、跳、闪、技、必杀、援助。</p><div id="lan-room"></div><a id="download" class="download" hidden>下载局域网开房包（Mac / Windows）</a></details>
+<details><summary>七名新角色与三格奥义</summary><p>在主菜单选 TRAINING 进入训练场。选人时用 WASD 移动，按 J 确认。普通攻击可以连点，跳起来也能出招。满三格怒气时，在地面按住 S 再按 I 发动奥义。</p><div id="cast"></div></details>
+<footer>原作 · 剑jian / 5DPLAY Game Studio <a href="https://github.com/5DPLAY-Game-Studio/BleachVsNaruto">原作开发组</a><a href="https://ruffle.rs">Ruffle</a></footer>
+</main><script type="module" src="./play.mjs"></script></body></html>
