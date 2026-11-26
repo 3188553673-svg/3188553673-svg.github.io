@@ -1,0 +1,20 @@
+name: Build native seven-character edition
+on:
+  push:
+    branches:
+      - bvn33-native-build
+permissions:
+  contents: write
+jobs:
+  assemble:
+    if: "${{ startsWith(github.event.head_commit.message, 'Assemble native 3.3 edition') }}"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble and verify the playable game
+        run: python3 portdata/assemble.py
+      - name: Save verified assets
+        run: |
+          git add -f assembled
+          git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com commit -m 'Verify and assemble native 3.3 game files'
+          git push origin HEAD:bvn33-native-build
